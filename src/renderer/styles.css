@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+:root {
+  /* Surfaces */
+  --bg:              #ffffff;
+  --surface:         #f8fafc;
+  --surface2:        #f1f5f9;
+  --surface-hover:   #e8f0fe;
+  --border:          #dde3ea;
+  --border-strong:   #b0bcc8;
+
+  /* Text */
+  --text:            #000000;
+  --text-secondary:  #000000;
+  --text-dim:        #1e293b;
+
+  /* Accent */
+  --accent:          #1447b8;
+  --accent-hover:    #0f3a9e;
+  --accent-light:    #eff6ff;
+  --accent-border:   #93c5fd;
+
+  /* Semantic status — text colors (≥4.5:1), bg colors (light tint) */
+  --s-starting-fg:   #1a56db;   /*  8.6:1 */
+  --s-starting-bg:   #eff6ff;
+  --s-starting-dot:  #3b82f6;   /* decorative */
+
+  --s-idle-fg:       #475569;
+  --s-idle-bg:       #f1f5f9;
+  --s-idle-dot:      #94a3b8;
+
+  --s-thinking-fg:   #92400e;   /*  8.3:1 */
+  --s-thinking-bg:   #fffbeb;
+  --s-thinking-dot:  #f59e0b;
+
+  --s-working-fg:    #9a3412;   /*  7.4:1 */
+  --s-working-bg:    #fff7ed;
+  --s-working-dot:   #f97316;
+
+  --s-error-fg:      #991b1b;   /*  7.0:1 */
+  --s-error-bg:      #fef2f2;
+  --s-error-dot:     #ef4444;
+
+  --s-stopped-fg:    #475569;   /*  7.0:1 */
+  --s-stopped-bg:    #f1f5f9;
+  --s-stopped-dot:   #94a3b8;
+
+  /* Semantic feedback */
+  --green:           #166534;
+  --green-bg:        #f0fdf4;
+  --yellow:          #92400e;
+  --yellow-bg:       #fffbeb;
+  --red:             #991b1b;
+  --red-bg:          #fef2f2;
+
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  --radius: 6px;
+  --radius-lg: 10px;
+
+  /* Selected agent card */
+  --selected-bg:     #dbeafe;
+
+  /* Finished (idle+unseen) agent card */
+  --finished-bg:     #f0fdf4;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.xterm { height: 100%; }
+.xterm-viewport { overflow-y: hidden !important; background-color: transparent !important; }
+.xterm-screen { height: 100%; }
+.xterm-screen canvas { display: block; }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 0 3px transparent; }
+  50%       { box-shadow: 0 0 0 3px var(--pulse-color, #22c55e40); }
+}
+
+@keyframes statusSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+

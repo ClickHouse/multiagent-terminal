@@ -1,0 +1,25 @@
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  main: {
+    plugins: [externalizeDepsPlugin()]
+  },
+  preload: {
+    build: {
+      rollupOptions: {
+        external: ['electron'],
+        output: { format: 'cjs', entryFileNames: '[name].cjs' }
+      }
+    }
+  },
+  renderer: {
+    plugins: [react()],
+    server: {
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Embedder-Policy': 'require-corp',
+      }
+    }
+  }
+})
