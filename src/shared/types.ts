@@ -56,7 +56,7 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   fontSize: 13,
   scrollSpeed: 3,
-  scrollback: 5000,
+  scrollback: 20000,
   skipPermissions: true,
   devTools: false,
   resumeOnOpen: true,
