@@ -3,7 +3,7 @@ import { useSettings } from '../store/settings'
 interface Props { onClose: () => void }
 
 export default function SettingsPanel({ onClose }: Props): JSX.Element {
-  const { fontSize, devTools, resumeOnOpen, set } = useSettings()
+  const { fontSize, scrollSpeed, scrollback, skipPermissions, devTools, resumeOnOpen, notifications, set } = useSettings()
 
   return (
     <div
@@ -29,22 +29,43 @@ export default function SettingsPanel({ onClose }: Props): JSX.Element {
         {/* Body */}
         <div style={{ padding: '18px' }}>
 
-          {/* Section: Terminal */}
+          {/* Section: General */}
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 12 }}>
-            Terminal
+            General
           </div>
 
-          {/* Resume session */}
+          {/* Notifications */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Resume last session</div>
-              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Pass --continue on open (slower, restores context)</div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>System notifications</div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Notify when an agent finishes working</div>
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
               <input
                 type="checkbox"
-                checked={resumeOnOpen}
-                onChange={e => set({ resumeOnOpen: e.target.checked })}
+                checked={notifications}
+                onChange={e => set({ notifications: e.target.checked })}
+                style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: 'pointer' }}
+              />
+            </label>
+          </div>
+
+          {/* Section: Terminal */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 12, marginTop: 20 }}>
+            Terminal
+          </div>
+
+        {/* Skip permissions */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>--dangerously-skip-permissions</div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Disable to enable pussy mode (restart agent to apply)</div>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={skipPermissions}
+                onChange={e => set({ skipPermissions: e.target.checked })}
                 style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: 'pointer' }}
               />
             </label>
@@ -92,18 +113,42 @@ export default function SettingsPanel({ onClose }: Props): JSX.Element {
             </div>
           </div>
 
-          {/* Preview */}
-          <div style={{
-            background: 'var(--surface)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)', padding: '10px 14px',
-            fontFamily: 'var(--font-mono)', fontSize: `${fontSize}px`,
-            color: 'var(--text)', lineHeight: 1.5,
-          }}>
-            <span style={{ color: '#16a34a' }}>user@host</span>
-            <span style={{ color: 'var(--text-dim)' }}>:~/project</span>
-            <span style={{ color: 'var(--text)' }}>$ </span>
-            <span>claude --dangerously-skip-permissions</span>
+        {/* Scroll speed */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Scroll speed</div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Terminal scroll sensitivity (Alt = 3x faster)</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)', minWidth: 20, textAlign: 'center' }}>
+                {scrollSpeed}
+              </span>
+              <input
+                type="range" min={1} max={10} value={scrollSpeed}
+                onChange={e => set({ scrollSpeed: Number(e.target.value) })}
+                style={{ width: 80, accentColor: 'var(--accent)' }}
+              />
+            </div>
           </div>
+
+        {/* Scrollback */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Max lines</div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Terminal scrollback buffer (restart agent to apply)</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)', minWidth: 36, textAlign: 'center' }}>
+                {scrollback}
+              </span>
+              <input
+                type="range" min={1000} max={50000} step={1000} value={scrollback}
+                onChange={e => set({ scrollback: Number(e.target.value) })}
+                style={{ width: 80, accentColor: 'var(--accent)' }}
+              />
+            </div>
+          </div>
+
 
         </div>
 

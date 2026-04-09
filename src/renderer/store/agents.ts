@@ -26,9 +26,10 @@ export const useAgentsStore = create<AgentsState>((set) => ({
           const b = list[i]
           return a.id === b.id && a.status === b.status && a.activity === b.activity &&
             a.contextPercent === b.contextPercent && a.costUSD === b.costUSD &&
-            a.changedFiles === b.changedFiles && a.currentBranch === b.currentBranch &&
-            a.prNumber === b.prNumber && a.prRepo === b.prRepo &&
+            a.changedFiles === b.changedFiles && a.linesAdded === b.linesAdded && a.linesRemoved === b.linesRemoved && a.currentBranch === b.currentBranch &&
+            a.prNumber === b.prNumber && a.prRepo === b.prRepo && a.prTitle === b.prTitle &&
             a.model === b.model && a.name === b.name &&
+            a.workingStartedAt === b.workingStartedAt && a.lastTaskDuration === b.lastTaskDuration && a.lastFinishedAt === b.lastFinishedAt && a.lastInputAt === b.lastInputAt &&
             a.userInteracted === b.userInteracted && a.unseenResponse === b.unseenResponse
         })
       if (same) return s

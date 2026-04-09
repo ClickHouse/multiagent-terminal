@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { Settings, Plus } from 'lucide-react'
 import { useAgentsStore } from '../store/agents'
 import AgentCard from './AgentCard'
@@ -11,13 +11,14 @@ export default function AgentList(): JSX.Element {
   const [cloneFrom, setCloneFrom] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
 
+  // Drag state
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<number | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+
   const handleCreated = (agent: any) => {
-    console.log('[AgentList] handleCreated:', agent?.name, agent?.id, 'status:', agent?.status)
     if (!agents.find((a: any) => a.id === agent.id)) {
-      console.log('[AgentList] adding locally, agents before:', agents.length)
       setAgents([...agents, agent])
-    } else {
-      console.log('[AgentList] already in store (from broadcast)')
     }
     selectAgent(agent.id)
     setShowNew(false)
@@ -28,6 +29,74 @@ export default function AgentList(): JSX.Element {
     setCloneFrom(agentId)
     setShowNew(true)
   }
+
+  const onDragStart = useCallback((e: React.DragEvent, agentId: string) => {
+    setDragId(agentId)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', agentId)
+    // Make the drag image semi-transparent
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.5'
+    }
+  }, [])
+
+  // Auto-scroll when dragging near edges
+  const scrollRafRef = useRef<number | null>(null)
+  const dragYRef = useRef(0)
+
+  useEffect(() => {
+    if (!dragId) {
+      if (scrollRafRef.current) { cancelAnimationFrame(scrollRafRef.current); scrollRafRef.current = null }
+      return
+    }
+    const EDGE = 40
+    const SPEED = 8
+    const tick = () => {
+      const el = listRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const y = dragYRef.current
+      if (y < rect.top + EDGE && el.scrollTop > 0) {
+        el.scrollTop -= SPEED
+      } else if (y > rect.bottom - EDGE && el.scrollTop < el.scrollHeight - el.clientHeight) {
+        el.scrollTop += SPEED
+      }
+      scrollRafRef.current = requestAnimationFrame(tick)
+    }
+    scrollRafRef.current = requestAnimationFrame(tick)
+    return () => { if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current) }
+  }, [dragId])
+
+  const onDragEnd = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1'
+    }
+    setDragId(null)
+    setDropTarget(null)
+  }, [])
+
+  const onDragOver = useCallback((e: React.DragEvent, idx: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDropTarget(idx)
+  }, [])
+
+  const onDrop = useCallback((e: React.DragEvent, targetIdx: number) => {
+    e.preventDefault()
+    const sourceId = e.dataTransfer.getData('text/plain')
+    if (!sourceId) return
+    const sourceIdx = agents.findIndex(a => a.id === sourceId)
+    if (sourceIdx < 0 || sourceIdx === targetIdx) return
+
+    const reordered = [...agents]
+    const [moved] = reordered.splice(sourceIdx, 1)
+    reordered.splice(targetIdx, 0, moved)
+
+    setAgents(reordered)
+    window.api.reorderAgents(reordered.map(a => a.id))
+    setDragId(null)
+    setDropTarget(null)
+  }, [agents, setAgents])
 
   const sourceAgent = cloneFrom ? agents.find(a => a.id === cloneFrom) : undefined
 
@@ -79,21 +148,38 @@ export default function AgentList(): JSX.Element {
       </div>
 
       {/* Agent list */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div ref={listRef} onDragOver={e => { dragYRef.current = e.clientY }} style={{ flex: 1, overflowY: 'auto' }}>
         {agents.length === 0 ? (
           <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-dim)', fontSize: 12, lineHeight: 1.8 }}>
             No agents yet.<br />Click <strong>+ New</strong> to create one.
           </div>
         ) : (
-          agents.map((agent) => (
-            <AgentCard
-              key={agent.id}
-              agent={agent}
-              selected={agent.id === selectedId}
-              onSelect={() => selectAgent(agent.id)}
-              onClone={() => handleClone(agent.id)}
-            />
-          ))
+          agents.map((agent, idx) => {
+            const isSel = agent.id === selectedId
+            return (
+              <div
+                key={agent.id}
+                draggable
+                onDragStart={e => onDragStart(e, agent.id)}
+                onDragEnd={onDragEnd}
+                onDragOver={e => onDragOver(e, idx)}
+                onDrop={e => onDrop(e, idx)}
+                style={{
+                  borderTop: dropTarget === idx && dragId !== agent.id
+                    ? '2px solid var(--accent)'
+                    : '2px solid transparent',
+                  ...(isSel ? { position: 'sticky' as const, top: 0, bottom: 0, zIndex: 2 } : {}),
+                }}
+              >
+                <AgentCard
+                  agent={agent}
+                  selected={isSel}
+                  onSelect={() => selectAgent(agent.id)}
+                  onClone={() => handleClone(agent.id)}
+                />
+              </div>
+            )
+          })
         )}
       </div>
 

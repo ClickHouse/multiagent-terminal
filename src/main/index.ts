@@ -78,35 +78,51 @@ function onAgentExit(id: string): void {
   if (agent) { agent.status = 'stopped'; agent.activity = ''; broadcastAgentsNow() }
 }
 
-function onAgentStatus(id: string, status: import('../shared/types.js').AgentStatus, activity: string): void {
+function onAgentStatus(id: string, status: import('../shared/types.js').AgentStatus, activity: string, sleepDetected = false, userTriggered = false): void {
   const agent = agents.find((a) => a.id === id)
   if (!agent) return
   if (agent.status === status && agent.activity === activity) return
 
-  const wasActive = agent.status === 'working' || agent.status === 'thinking'
-  const becomesIdle = status === 'idle'
+  const wasActive    = agent.status === 'working' || agent.status === 'thinking'
+  const becomesActive = status === 'working' || status === 'thinking'
+
+  // Track when the active period started and how long it lasted.
+  if (becomesActive && !wasActive) agent.workingStartedAt = Date.now()
+
+  const activeDuration = agent.workingStartedAt
+    ? Math.round((Date.now() - agent.workingStartedAt) / 1000)
+    : 0
+
+  if (wasActive && !becomesActive && agent.workingStartedAt && !sleepDetected) {
+    if (activeDuration > 0 && activeDuration < 7200) {
+      agent.lastTaskDuration = activeDuration
+    }
+    agent.lastFinishedAt = Date.now()
+  }
+  if (!becomesActive) agent.workingStartedAt = null
 
   agent.status = status
   agent.activity = activity
-  broadcastAgents()
 
-  // Notify only when user has actually interacted with this agent since last spawn.
-  const spawnedAt      = agentSpawnedAt.get(id) ?? 0
-  const lastInputAt    = agentLastInputAt.get(id) ?? 0
-  const userInteracted = lastInputAt > spawnedAt
-  if (agent.userInteracted !== userInteracted) {
-    agent.userInteracted = userInteracted
-  }
+  // "Done" requires ALL of:
+  // 1. Transitioned from active (thinking/working) to idle
+  // 2. Not caused by sleep/wake
+  // 3. userTriggered = true (the PTY entry confirms markThinking was called for THIS cycle)
+  // TODO: re-enable minimum duration check (activeDuration >= 7) once threshold is tuned
+  if (wasActive && status === 'idle' && !sleepDetected && userTriggered) {
+    const spawnedAt = agentSpawnedAt.get(id) ?? 0
+    const isCurrent = id === selectedAgentId
+    const tooNew = Date.now() - spawnedAt < 5000
 
-  if (wasActive && becomesIdle && userInteracted) {
-    agent.unseenResponse = true
-
-    const spawnedAt  = agentSpawnedAt.get(id) ?? 0
-    const tooNew     = Date.now() - spawnedAt < 5000   // opened < 5s ago
-    const isCurrent  = id === selectedAgentId           // user is looking at it
+    // Don't mark as unseen if the user is already watching this agent —
+    // they saw it finish in real time, so no badge needed.
+    if (!isCurrent) {
+      agent.unseenResponse = true
+    }
+    agent.userInteracted = true
 
     if (!tooNew && !isCurrent) {
-      if (Notification.isSupported()) {
+      if (Notification.isSupported() && getSettings().notifications) {
         new Notification({
           title: 'Agent finished',
           body: `${agent.name} is waiting for input`,
@@ -116,16 +132,32 @@ function onAgentStatus(id: string, status: import('../shared/types.js').AgentSta
       send('agent:finished', id, agent.name)
     }
   }
+
+  broadcastAgentsNow()
 }
 
 function startAgent(agent: Agent, resume: boolean): void {
   agentSpawnedAt.set(agent.id, Date.now())
   agentLastInputAt.delete(agent.id)
   agent.status = 'starting'
-  agentManager.spawnAgent(agent, resume, onAgentExit, onAgentStatus)
-  agent.status = 'idle'
+  agentManager.spawnAgent(agent, resume, onAgentExit, onAgentStatus, getSettings().skipPermissions)
+  // When resuming, Claude starts working immediately — reflect that in status.
+  // The pipe/output tracking will transition thinking → working → idle.
+  if (resume) {
+    agent.status = 'thinking'
+    agent.workingStartedAt = Date.now()
+  } else {
+    agent.status = 'idle'
+  }
 
+  // ensurePipe + pipe reading are async — don't block the event loop.
   ensurePipe(agent.statusPipePath)
+    .then(() => startAgent_readPipe(agent))
+    .catch(e => console.error('[startAgent] pipe setup error:', e))
+  broadcastAgentsNow()
+}
+
+function startAgent_readPipe(agent: Agent): void {
   startReading(agent.id, agent.statusPipePath, (agentId, update) => {
     const a = agents.find(x => x.id === agentId)
     if (!a) return
@@ -137,29 +169,45 @@ function startAgent(agent: Agent, resume: boolean): void {
       const m = update.model as any
       newModel = typeof m === 'string' ? m : (m.id ?? m.name ?? m.model ?? JSON.stringify(m))
     }
-    if (a.contextPercent === newPct && a.costUSD === newCost &&
-        a.tokensUsed === newTok && a.model === newModel) return
+    const changed = a.contextPercent !== newPct || a.costUSD !== newCost ||
+        a.tokensUsed !== newTok || a.model !== newModel
     a.contextPercent = newPct
     a.tokensUsed     = newTok
     a.contextWindowSize = update.context_window.context_window_size
     a.costUSD        = newCost
     a.model          = newModel
-    broadcastAgents()
+
+    // Statusline fires after each assistant turn — use it as a signal.
+    agentManager.notifyPipeUpdate(agentId, onAgentStatus)
+
+    if (changed) broadcastAgents()
   })
-  broadcastAgentsNow()
 }
 
 function toPersistedAgents(): PersistedAgent[] {
-  return agents.map(({ status: _s, activity: _a, model: _m, contextPercent: _c, tokensUsed: _t, contextWindowSize: _w, costUSD: _u, changedFiles: _f, currentBranch: _b, prNumber: _p, prRepo: _r, unseenResponse: _u2, userInteracted: _i, ...rest }) => rest)
+  return agents.map(({ status: _s, activity: _a, model: _m, contextPercent: _c, tokensUsed: _t, contextWindowSize: _w, costUSD: _u, changedFiles: _f, linesAdded: _la, linesRemoved: _lr, currentBranch: _b, prNumber: _p, prRepo: _r, prTitle: _pt, workingStartedAt: _ws, lastTaskDuration: _ltd, lastFinishedAt: _lfa, lastInputAt: _lia, unseenResponse: _u2, userInteracted: _i, ...rest }) => rest)
 }
 
 function createWindow(): void {
+  // Enable SharedArrayBuffer by setting COOP/COEP headers.
+  const { session } = require('electron') as typeof import('electron')
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Cross-Origin-Opener-Policy': ['same-origin'],
+        'Cross-Origin-Embedder-Policy': ['require-corp'],
+      }
+    })
+  })
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 700,
     minHeight: 400,
-    backgroundColor: '#fffbec',
+    backgroundColor: '#ffffff',
+    icon: path.join(__dirname, '../../resources/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -235,6 +283,9 @@ ipcMain.handle('agent:create', async (_e, name: string, customBase: string | nul
     if (fs.existsSync(wtPath)) {
       throw new Error(`Worktree destination already exists: ${wtPath}\nChoose a different destination.`)
     }
+    // Ensure parent directory exists (e.g. user typed ~/projects/new-dir/agent).
+    const parentDir = path.dirname(wtPath)
+    if (!fs.existsSync(parentDir)) fs.mkdirSync(parentDir, { recursive: true })
     await createWorktree(repoRoot, wtPath, sanitized)
     branchName = sanitized
     console.log('[create] worktree created, branch:', branchName)
@@ -250,7 +301,7 @@ ipcMain.handle('agent:create', async (_e, name: string, customBase: string | nul
   }
 
   console.log('[create] creating named pipe:', pipePath)
-  ensurePipe(pipePath)
+  await ensurePipe(pipePath)
   console.log('[create] pipe ok')
 
   const agent: Agent = {
@@ -262,7 +313,7 @@ ipcMain.handle('agent:create', async (_e, name: string, customBase: string | nul
     createdAt: new Date().toISOString(),
     status: 'starting',
     activity: '', model: '',
-    contextPercent: 0, tokensUsed: 0, contextWindowSize: 0, costUSD: 0, changedFiles: 0, currentBranch: '', prNumber: null, prRepo: '', unseenResponse: false, userInteracted: false
+    contextPercent: 0, tokensUsed: 0, contextWindowSize: 0, costUSD: 0, changedFiles: 0, linesAdded: 0, linesRemoved: 0, currentBranch: '', prNumber: null, prRepo: '', prTitle: '', workingStartedAt: null, lastTaskDuration: null, lastFinishedAt: null, lastInputAt: null, unseenResponse: false, userInteracted: false
   }
 
   agents.push(agent)
@@ -299,16 +350,20 @@ ipcMain.handle('agent:create', async (_e, name: string, customBase: string | nul
       }
     }
 
-    // Skip broadcast if nothing changed.
-    if (a.contextPercent === newPct && a.tokensUsed === newTokens &&
-        a.costUSD === newCost && a.model === newModel) return
+    const changed = a.contextPercent !== newPct || a.tokensUsed !== newTokens ||
+        a.costUSD !== newCost || a.model !== newModel
 
     a.contextPercent   = newPct
     a.tokensUsed       = newTokens
     a.contextWindowSize = newSize
     a.costUSD          = newCost
     a.model            = newModel
-    broadcastAgents()
+
+    // Statusline fires after each assistant turn — use it as a signal
+    // to transition thinking→working→idle (same as startAgent_readPipe).
+    agentManager.notifyPipeUpdate(agentId, onAgentStatus)
+
+    if (changed) broadcastAgents()
   })
 
   saveAgents(toPersistedAgents())
@@ -336,38 +391,82 @@ ipcMain.handle('agent:rename', (_e, id: string, newName: string) => {
   broadcastAgents()
 })
 
+ipcMain.handle('agent:move', (_e, id: string, direction: 'up' | 'down') => {
+  const idx = agents.findIndex(a => a.id === id)
+  if (idx < 0) return
+  const target = direction === 'up' ? idx - 1 : idx + 1
+  if (target < 0 || target >= agents.length) return
+  ;[agents[idx], agents[target]] = [agents[target], agents[idx]]
+  saveAgents(toPersistedAgents())
+  broadcastAgentsNow()
+})
+
+ipcMain.handle('agent:reorder', (_e, orderedIds: string[]) => {
+  const byId = new Map(agents.map(a => [a.id, a]))
+  const reordered = orderedIds.map(id => byId.get(id)).filter(Boolean) as typeof agents
+  // Append any agents not in the list (shouldn't happen, but safety)
+  for (const a of agents) {
+    if (!orderedIds.includes(a.id)) reordered.push(a)
+  }
+  agents.length = 0
+  agents.push(...reordered)
+  saveAgents(toPersistedAgents())
+  broadcastAgentsNow()
+})
+
 ipcMain.handle('agent:reset', async (_e, id: string) => {
   const agent = agents.find((a) => a.id === id)
   if (!agent) return
 
-  // 1. Kill the running claude session.
+  // 1. Kill claude.
   agentManager.killAgent(id)
-  agent.status = 'starting'
+  stopReading(id)
+  agent.status = 'stopped'
   agent.activity = 'resetting…'
   broadcastAgentsNow()
 
+  // 2. Git: checkout default branch + pull.
   try {
     const git = simpleGit(agent.worktreePath)
-    // 2. Checkout master (or main) and pull.
     const branches = await git.branch()
     const defaultBranch = ['master', 'main'].find(b => branches.all.includes(b)) ?? 'master'
+    agent.activity = `git checkout ${defaultBranch}…`
+    broadcastAgentsNow()
     await git.checkout(defaultBranch)
+    agent.activity = `git pull…`
+    broadcastAgentsNow()
     await git.pull('origin', defaultBranch, ['--ff-only'])
-    console.log(`[reset] ${agent.name}: checked out ${defaultBranch} and pulled`)
+    agent.branchName = defaultBranch
+    agent.currentBranch = defaultBranch
+    agent.changedFiles = 0
   } catch (e: any) {
     console.error(`[reset] git error for ${agent.name}:`, e?.message)
   }
 
-  // 3. Re-spawn claude with --continue so it resumes context.
-  agentManager.spawnAgent(agent, true, onAgentExit, onAgentStatus)
-  agent.status = 'idle'
+  // 3. Clear terminal in renderer.
+  send('terminal:clear', id)
+
+  // 4. Start claude fresh (no --continue — clean session on a clean branch).
+  agent.activity = 'starting…'
+  broadcastAgentsNow()
+  agentSpawnedAt.set(id, Date.now())
+  agentLastInputAt.delete(id)
+  agent.unseenResponse = false
+  agent.userInteracted = false
+  try {
+    agentManager.spawnAgent(agent, false, onAgentExit, onAgentStatus)
+    startAgent_readPipe(agent)
+  } catch (e: any) {
+    console.error(`[reset] spawn error:`, e?.message)
+    agent.status = 'error'
+  }
   agent.activity = ''
   broadcastAgentsNow()
 })
 
 ipcMain.handle('agent:markSeen', (_e, id: string) => {
   const agent = agents.find(a => a.id === id)
-  if (agent?.unseenResponse) { agent.unseenResponse = false; broadcastAgents() }
+  if (agent?.unseenResponse) { agent.unseenResponse = false; broadcastAgentsNow() }
 })
 
 ipcMain.handle('agent:ensureRunning', (_e, id: string) => {
@@ -384,24 +483,37 @@ ipcMain.handle('agent:restart', async (_e, id: string) => {
   if (!agent) return
   agentManager.killAgent(id)
   stopReading(id)
-  try { startAgent(agent, true) }
+  send('terminal:clear', id)
+  agent.status = 'starting'
+  agent.activity = ''
+  agent.contextPercent = 0
+  agent.tokensUsed = 0
+  agent.costUSD = 0
+  agent.lastTaskDuration = null
+  agent.unseenResponse = false
+  agent.userInteracted = false
+  broadcastAgentsNow()
+  // Let the renderer process the clear before spawning new output.
+  await new Promise(r => setTimeout(r, 100))
+  try { startAgent(agent, false) }
   catch (e: any) { agent.status = 'stopped'; broadcastAgentsNow() }
 })
 
 ipcMain.on('terminal:input', (_e, id: string, data: string) => {
   agentManager.sendInput(id, data)
 
-  // Ignore xterm focus/blur/resize control sequences — they fire automatically
-  // when the terminal is focused and don't represent real user intent.
-  const isControlOnly = /^[\x00-\x1f\x7f]*$/.test(data) &&
-    !/[\r\t]/.test(data)  // allow Enter and Tab as real input
-  if (isControlOnly) return
+  // Ignore escape sequences (focus, resize, cursor reports).
+  if (/^\x1b/.test(data)) return
+  // Ignore pure control chars (not Enter/newline).
+  if (/^[\x00-\x1f\x7f]*$/.test(data) && !/[\r\n]/.test(data)) return
 
-  agentLastInputAt.set(id, Date.now())
-  const agent = agents.find(a => a.id === id)
-  if (agent && !agent.userInteracted) {
-    agent.userInteracted = true
-    broadcastAgents()
+  // Only Enter counts as meaningful interaction (submitting a prompt to Claude).
+  // Single keypresses while typing are not "interaction" for status purposes.
+  const isEnter = data.includes('\r') || data.includes('\n')
+  if (isEnter) {
+    const agent = agents.find(a => a.id === id)
+    if (agent) agent.lastInputAt = Date.now()
+    agentManager.markThinking(id, onAgentStatus)
   }
 })
 
@@ -463,18 +575,18 @@ ipcMain.handle('actions:openDiff', async (_e, id: string): Promise<void> => {
 
   let diffText = ''
   try {
-    console.log('[diff] running git diff HEAD ...')
-    diffText = await git.diff(['HEAD', '--', ':!contrib/']).catch((e: any) => {
-      console.log('[diff] git diff HEAD failed, falling back to git diff:', e?.message)
-      return git.diff(['--', ':!contrib/'])
-    })
-    console.log(`[diff] tracked diff length: ${diffText.length} chars`)
-
-    // Only include staged new files (git add'd), not untracked files.
-    const status = await git.status()
-    console.log(`[diff] staged new files: ${status.created.length}`)
+    // Compare branch to base (main/master) — shows all changes since fork point.
+    const mergeBase = await getMergeBase(git)
+    if (mergeBase) {
+      diffText = await git.diff([mergeBase, '--', ':!contrib/'])
+    } else {
+      // Fallback: uncommitted changes against HEAD
+      diffText = await git.diff(['HEAD', '--', ':!contrib/']).catch(() =>
+        git.diff(['--', ':!contrib/'])
+      )
+    }
   } catch (e: any) {
-    console.log('[diff] git error:', e?.message)
+    console.error('[diff] git error:', e?.message)
   }
 
   console.log(`[diff] total diff size: ${diffText.length} chars`)
@@ -546,21 +658,34 @@ ipcMain.handle('actions:getPRNumber', async (_e, id: string): Promise<number | n
   if (!agent) return null
   const { exec } = require('child_process') as typeof import('child_process')
   return new Promise(resolve => {
-    exec('gh pr view --json number,headRepository --jq "[.number,.headRepository.name]|@tsv"',
+    exec('gh pr view --json number,headRepository,title --jq "[.number,.headRepository.name,.title]|@tsv"',
       { cwd: agent.worktreePath },
       (err, stdout) => {
         if (err || !stdout.trim()) {
-          if (agent.prNumber !== null) { agent.prNumber = null; agent.prRepo = ''; broadcastAgents() }
+          const hadPR = agent.prNumber !== null
+          agent.prNumber = null; agent.prTitle = ''
+          // Fetch repo name from gh even without a PR
+          exec('gh repo view --json nameWithOwner --jq .nameWithOwner',
+            { cwd: agent.worktreePath },
+            (e2, repoOut) => {
+              const repoName = repoOut?.trim() || ''
+              if (hadPR || agent.prRepo !== repoName) {
+                agent.prRepo = repoName
+                broadcastAgentsNow()
+              }
+            })
           resolve(null); return
         }
         try {
-          const [numStr, repoName] = stdout.trim().split('\t')
-          const num  = parseInt(numStr ?? '', 10)
-          const repo = repoName?.trim() || path.basename(agent.baseRepoPath)
+          const parts = stdout.trim().split('\t')
+          const num  = parseInt(parts[0] ?? '', 10)
+          const repo = parts[1]?.trim() || path.basename(agent.baseRepoPath)
+          const title = parts[2]?.trim() || ''
           const finalNum = isNaN(num) ? null : num
-          if (agent.prNumber !== finalNum || agent.prRepo !== repo) {
+          if (agent.prNumber !== finalNum || agent.prRepo !== repo || agent.prTitle !== title) {
             agent.prNumber = finalNum
             agent.prRepo   = repo
+            agent.prTitle  = title
             broadcastAgents()
           }
           resolve(agent.prNumber)
@@ -571,24 +696,187 @@ ipcMain.handle('actions:getPRNumber', async (_e, id: string): Promise<number | n
   })
 })
 
+ipcMain.handle('actions:getGitLog', async (_e, id: string) => {
+  const agent = agents.find(a => a.id === id)
+  if (!agent) return []
+  try {
+    const git = simpleGit(agent.worktreePath)
+    // Use --stat and a custom format to get all info in one call.
+    const raw = await git.raw([
+      'log', '-10',
+      '--format=%H%x00%s%x00%aI%x00%aN%x00',
+      '--shortstat',
+    ])
+    const commits: Array<{
+      hash: string; message: string; date: string; author: string;
+      filesChanged: number; linesAdded: number; linesRemoved: number;
+    }> = []
+
+    // Parse: each commit is a format line followed by an optional shortstat line.
+    // Format line: hash\0message\0date\0author\0
+    // Shortstat line: " 3 files changed, 10 insertions(+), 2 deletions(-)"
+    const lines = raw.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
+      if (!line.includes('\0')) continue
+      const [hash, message, date, author] = line.split('\0')
+      if (!hash) continue
+
+      let filesChanged = 0, linesAdded = 0, linesRemoved = 0
+      // Next non-empty line might be the shortstat.
+      const next = lines[i + 1]?.trim()
+      if (next && /\d+ file/.test(next)) {
+        const fm = next.match(/(\d+) file/)
+        const im = next.match(/(\d+) insertion/)
+        const dm = next.match(/(\d+) deletion/)
+        filesChanged = fm ? parseInt(fm[1]) : 0
+        linesAdded = im ? parseInt(im[1]) : 0
+        linesRemoved = dm ? parseInt(dm[1]) : 0
+        i++ // skip the stat line
+      }
+
+      commits.push({ hash, message, date, author, filesChanged, linesAdded, linesRemoved })
+    }
+    return commits
+  } catch { return [] }
+})
+
+ipcMain.handle('actions:openCommitDiff', async (_e, id: string, commitHash: string): Promise<void> => {
+  const agent = agents.find(a => a.id === id)
+  if (!agent) return
+  try {
+    const git = simpleGit(agent.worktreePath)
+    const diffText = await git.diff([`${commitHash}~1`, commitHash, '--', ':!contrib/'])
+      .catch(() => git.diff([commitHash, '--', ':!contrib/']))
+
+    const noChanges = `<div style="display:flex;align-items:center;justify-content:center;
+      height:calc(100vh - 49px);color:#5a6a7e;font-size:15px;">No changes in this commit.</div>`
+
+    const html = `<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"/><title>Commit ${commitHash.slice(0, 7)} — ${agent.name}</title>
+<style>${diff2html.css}</style>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;background:#f8fafc;color:#0d1117}
+header{padding:12px 20px;background:#fff;border-bottom:1px solid #dde3ea;
+  display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+header h1{font-size:14px;font-weight:600}
+header span{font-size:12px;color:#5a6a7e;font-family:monospace}
+#diff-container{padding:16px 20px}
+.d2h-wrapper{border-radius:8px;overflow:hidden;border:1px solid #dde3ea}
+.d2h-file-header{background:#f1f5f9!important}
+.d2h-ins{background-color:#dcfce7!important}
+.d2h-ins .d2h-code-linenumber{background-color:#bbf7d0!important;color:#166534!important}
+.d2h-del{background-color:#fee2e2!important}
+.d2h-del .d2h-code-linenumber{background-color:#fecaca!important;color:#991b1b!important}
+.d2h-diff-table td{font-size:12px;font-family:"JetBrains Mono","Fira Code",monospace}
+.d2h-code-side-linenumber{font-size:11px;min-width:36px}
+</style>
+</head><body>
+<header>
+  <h1>Commit ${commitHash.slice(0, 7)} — ${agent.name}</h1>
+  <span>${agent.worktreePath}</span>
+</header>
+<div id="diff-container"></div>
+<script>${diff2html.js}</script>
+<script>
+var raw=${
+      JSON.stringify(diffText.slice(0, 4_000_000))
+        .replace(/<\/script>/gi, '<\\/script>')
+    };
+var el=document.getElementById('diff-container');
+if(!raw.trim()){el.innerHTML=${JSON.stringify(noChanges)};}
+else{
+  var h=Diff2Html.html(Diff2Html.parse(raw),{drawFileList:true,matching:'lines',outputFormat:'side-by-side'});
+  el.innerHTML='<div class="d2h-wrapper">'+h+'</div>';
+}
+</script>
+</body></html>`
+
+    const tmpFile = path.join(os.tmpdir(), `multiagent-commit-${commitHash.slice(0, 7)}.html`)
+    fs.writeFileSync(tmpFile, html, 'utf8')
+    await shell.openExternal(`file://${tmpFile}`)
+  } catch (e: any) {
+    console.error('[openCommitDiff] error:', e?.message)
+  }
+})
+
+/** Find the base branch (main or master) merge-base for diff comparisons. */
+async function getMergeBase(git: ReturnType<typeof simpleGit>): Promise<string | null> {
+  try {
+    const head = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim()
+    // Try origin/main, origin/master, then local main/master
+    for (const base of ['origin/main', 'origin/master', 'main', 'master']) {
+      try {
+        const mb = (await git.raw(['merge-base', base, 'HEAD'])).trim()
+        if (mb && head !== base.replace('origin/', '')) return mb
+      } catch { /* try next */ }
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+// Lightweight: file count + branch (fast, runs every 10s)
 ipcMain.handle('actions:getChangedFiles', async (_e, id: string): Promise<number> => {
   const agent = agents.find(a => a.id === id)
   if (!agent) return 0
   try {
     const git = simpleGit(agent.worktreePath)
-    const [status, branch] = await Promise.all([
-      git.status(),
-      git.revparse(['--abbrev-ref', 'HEAD']).catch(() => ''),
-    ])
-    const count = status.files.filter(f => !f.path.startsWith('contrib/')).length
-    const liveBranch = branch.trim()
-    if (agent.changedFiles !== count || agent.currentBranch !== liveBranch) {
+    const branch = (await git.revparse(['--abbrev-ref', 'HEAD']).catch(() => '')).trim()
+    const mergeBase = await getMergeBase(git)
+
+    let count = 0
+    if (mergeBase) {
+      // Compare branch to base: all committed + uncommitted changes since fork point
+      const out = await git.diff([mergeBase, '--name-only', '--', ':!contrib/'])
+      count = out.trim().split('\n').filter(Boolean).length
+    } else {
+      // On base branch: show uncommitted changes
+      const [unstaged, staged] = await Promise.all([
+        git.diff(['--name-only', '--', ':!contrib/']),
+        git.diff(['--cached', '--name-only', '--', ':!contrib/']),
+      ])
+      count = new Set([
+        ...unstaged.trim().split('\n'),
+        ...staged.trim().split('\n'),
+      ].filter(Boolean)).size
+    }
+
+    if (agent.changedFiles !== count || agent.currentBranch !== branch) {
       agent.changedFiles = count
-      agent.currentBranch = liveBranch
+      agent.currentBranch = branch
       broadcastAgents()
     }
     return count
   } catch { return 0 }
+})
+
+// Line stats: use git log --shortstat (reads pack data, no working tree scan)
+ipcMain.handle('actions:getLineStats', async (_e, id: string) => {
+  const agent = agents.find(a => a.id === id)
+  if (!agent) return
+  try {
+    const git = simpleGit(agent.worktreePath)
+    const mergeBase = await getMergeBase(git)
+    if (!mergeBase) return
+
+    // Sum up shortstat across all commits since merge-base — fast, uses pack data only
+    const out = await git.raw([
+      'log', `${mergeBase}..HEAD`, '--shortstat', '--format=', '--', ':!contrib/'
+    ])
+    let added = 0, removed = 0
+    for (const line of out.split('\n')) {
+      const am = line.match(/(\d+) insertion/)
+      const rm = line.match(/(\d+) deletion/)
+      if (am) added += parseInt(am[1], 10)
+      if (rm) removed += parseInt(rm[1], 10)
+    }
+    if (agent.linesAdded !== added || agent.linesRemoved !== removed) {
+      agent.linesAdded = added
+      agent.linesRemoved = removed
+      broadcastAgents()
+    }
+  } catch { /* ignore */ }
 })
 
 ipcMain.handle('actions:openPR', async (_e, id: string) => {
@@ -596,6 +884,16 @@ ipcMain.handle('actions:openPR', async (_e, id: string) => {
   if (!agent) return
   const { exec } = require('child_process')
   exec(`gh pr view --web`, { cwd: agent.worktreePath })
+})
+
+ipcMain.handle('actions:openRepo', async (_e, id: string) => {
+  const agent = agents.find((a) => a.id === id)
+  if (!agent) return
+  const { exec } = require('child_process') as typeof import('child_process')
+  exec(`gh browse --no-browser`, { cwd: agent.worktreePath }, (err, stdout) => {
+    const url = stdout?.trim()
+    if (url) shell.openExternal(url)
+  })
 })
 
 // Handle agent exit event from agentManager.
@@ -610,6 +908,32 @@ ipcMain.on('agent:exited', (_e, id: string) => {
 // --- App lifecycle ---
 
 app.whenReady().then(async () => {
+  // Preflight: check required commands are available.
+  const { execSync } = require('child_process') as typeof import('child_process')
+  const missing: string[] = []
+  const checks: Array<{ cmd: string; test: string; label: string }> = [
+    { cmd: 'git --version', test: '', label: 'git' },
+    { cmd: 'gh --version', test: '', label: 'gh (GitHub CLI)' },
+    { cmd: 'claude --version', test: '', label: 'claude' },
+    { cmd: 'claude auth status', test: '', label: 'claude auth (not logged in)' },
+  ]
+  for (const { cmd, label } of checks) {
+    try {
+      execSync(cmd, { stdio: 'pipe', timeout: 10000 })
+    } catch {
+      missing.push(label)
+    }
+  }
+  if (missing.length > 0) {
+    const { dialog: d } = require('electron') as typeof import('electron')
+    d.showErrorBox(
+      'Missing requirements',
+      `The following are required but not found:\n\n${missing.map(m => `  • ${m}`).join('\n')}\n\nPlease install them and restart the app.`
+    )
+    app.quit()
+    return
+  }
+
   // Setup statusline script.
   try {
     const scriptPath = ensureStatuslineScript()
@@ -649,13 +973,23 @@ app.whenReady().then(async () => {
     tokensUsed: 0,
     contextWindowSize: 0,
     costUSD: 0,
-    changedFiles: 0, currentBranch: '', prNumber: null, prRepo: '', unseenResponse: false, userInteracted: false
+    changedFiles: 0, linesAdded: 0, linesRemoved: 0, currentBranch: '', prNumber: null, prRepo: '', prTitle: '', workingStartedAt: null, lastTaskDuration: null, lastFinishedAt: null, lastInputAt: null, unseenResponse: false, userInteracted: false
   }))
 
   createWindow()
 })
 
 ipcMain.handle('shell:openExternal', (_e, url: string) => shell.openExternal(url))
+
+ipcMain.on('clipboard:write', (_e, text: string) => {
+  const { clipboard } = require('electron')
+  clipboard.writeText(text)
+})
+
+ipcMain.handle('clipboard:read', () => {
+  const { clipboard } = require('electron')
+  return clipboard.readText()
+})
 
 ipcMain.handle('settings:get', () => getSettings())
 ipcMain.handle('settings:save', (_e, patch: any) => {

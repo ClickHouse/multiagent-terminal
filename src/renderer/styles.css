@@ -5,18 +5,18 @@
   --bg:              #ffffff;
   --surface:         #f8fafc;
   --surface2:        #f1f5f9;
-  --surface-hover:   #e8edf2;
+  --surface-hover:   #e8f0fe;
   --border:          #dde3ea;
   --border-strong:   #b0bcc8;
 
-  /* Text — all pass WCAG AA (≥4.5:1 on --bg) */
-  --text:            #0d1117;   /* 19.1:1 */
-  --text-secondary:  #3b4756;   /* 10.0:1 */
-  --text-dim:        #5a6a7e;   /*  5.3:1 — was #94a3b8 = 2.96:1 ✗ */
+  /* Text */
+  --text:            #000000;
+  --text-secondary:  #000000;
+  --text-dim:        #1e293b;
 
   /* Accent */
-  --accent:          #1a56db;   /*  8.6:1 */
-  --accent-hover:    #1344b8;
+  --accent:          #1447b8;
+  --accent-hover:    #0f3a9e;
   --accent-light:    #eff6ff;
   --accent-border:   #93c5fd;
 
@@ -25,9 +25,9 @@
   --s-starting-bg:   #eff6ff;
   --s-starting-dot:  #3b82f6;   /* decorative */
 
-  --s-idle-fg:       #166534;   /*  7.2:1 */
-  --s-idle-bg:       #f0fdf4;
-  --s-idle-dot:      #22c55e;
+  --s-idle-fg:       #475569;
+  --s-idle-bg:       #f1f5f9;
+  --s-idle-dot:      #94a3b8;
 
   --s-thinking-fg:   #92400e;   /*  8.3:1 */
   --s-thinking-bg:   #fffbeb;
@@ -57,6 +57,12 @@
   --font-ui: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
   --radius: 6px;
   --radius-lg: 10px;
+
+  /* Selected agent card */
+  --selected-bg:     #dbeafe;
+
+  /* Finished (idle+unseen) agent card */
+  --finished-bg:     #f0fdf4;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -73,8 +79,9 @@ html, body, #root {
 }
 
 .xterm { height: 100%; }
-.xterm-viewport { overflow-y: hidden !important; }
+.xterm-viewport { overflow-y: hidden !important; background-color: transparent !important; }
 .xterm-screen { height: 100%; }
+.xterm-screen canvas { display: block; }
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -84,4 +91,13 @@ html, body, #root {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.55; }
+}
+
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 0 3px transparent; }
+  50%       { box-shadow: 0 0 0 3px var(--pulse-color, #22c55e40); }
+}
+
+@keyframes statusSpin {
+  to { transform: rotate(360deg); }
 }

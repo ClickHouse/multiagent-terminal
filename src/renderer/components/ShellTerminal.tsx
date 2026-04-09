@@ -3,7 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 
-interface Props { agentId: string; fontSize?: number }
+interface Props { agentId: string; fontSize?: number; scrollSpeed?: number; visible?: boolean }
 
 const THEME = {
   background: '#f8fafc', foreground: '#1e293b',
@@ -19,13 +19,14 @@ const THEME = {
 // Track which agents already have a shell spawned (persists across mounts).
 const spawnedAgents = new Set<string>()
 
-export default function ShellTerminal({ agentId, fontSize = 12 }: Props): JSX.Element {
+export default function ShellTerminal({ agentId, fontSize = 12, scrollSpeed = 3, visible = true }: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
+  const xtermRef = useRef<XTerm | null>(null)
+  const fitRef = useRef<FitAddon | null>(null)
 
   useEffect(() => {
     if (!containerRef.current) return
 
-    // Fresh xterm on every mount — avoids detach/reattach event-listener issues.
     const xterm = new XTerm({
       theme: THEME,
       fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, monospace',
@@ -33,8 +34,12 @@ export default function ShellTerminal({ agentId, fontSize = 12 }: Props): JSX.El
       lineHeight: 1.4,
       cursorBlink: true,
       allowProposedApi: true,
+      copyOnSelect: true,
       scrollback: 2000,
       padding: 8,
+      scrollSensitivity: scrollSpeed,
+      fastScrollModifier: 'alt',
+      fastScrollSensitivity: scrollSpeed * 3,
     } as any)
 
     const fit = new FitAddon()
@@ -42,6 +47,9 @@ export default function ShellTerminal({ agentId, fontSize = 12 }: Props): JSX.El
     xterm.loadAddon(new WebLinksAddon((_e, uri) => window.api.openExternal(uri)))
     xterm.open(containerRef.current)
     if (xterm.element) xterm.element.style.background = '#f8fafc'
+
+    xtermRef.current = xterm
+    fitRef.current = fit
 
     // Spawn shell once per agent (PTY outlives xterm instances).
     if (!spawnedAgents.has(agentId)) {
@@ -53,15 +61,54 @@ export default function ShellTerminal({ agentId, fontSize = 12 }: Props): JSX.El
       fit.fit()
       const { cols, rows } = xterm
       if (cols > 0 && rows > 0) window.api.shellResize(agentId, cols, rows)
-      // Don't auto-focus — Claude terminal has priority. User clicks to focus shell.
     })
 
     xterm.onData(data => window.api.shellInput(agentId, data))
 
+    xterm.onSelectionChange(() => {
+      const sel = xterm.getSelection()
+      if (sel) window.api.clipboardWrite(sel)
+    })
+
+    const pasteHandler = (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData('text/plain')
+      if (text) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        window.api.shellInput(agentId, text.replace(/[\r\n]+$/, ''))
+      }
+    }
+    const ta = containerRef.current?.querySelector('textarea')
+    ta?.addEventListener('paste', pasteHandler as EventListener, { capture: true })
+
+    xterm.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'C' && e.type === 'keydown') {
+        const sel = xterm.getSelection()
+        if (sel) window.api.clipboardWrite(sel)
+        return false
+      }
+      return true
+    })
+
     let writeBuffer = ''
     let rafId: number | null = null
+    let userScrolledUp = false
+    const viewport = () => xterm.element?.querySelector('.xterm-viewport') as HTMLElement | null
+    xterm.onScroll(() => {
+      userScrolledUp = xterm.buffer.active.viewportY < xterm.buffer.active.baseY
+    })
     const flush = () => {
-      if (writeBuffer) { xterm.write(writeBuffer); writeBuffer = '' }
+      if (writeBuffer) {
+        if (userScrolledUp) {
+          const vp = viewport()
+          const saved = vp?.scrollTop ?? 0
+          xterm.write(writeBuffer)
+          if (vp) vp.scrollTop = saved
+        } else {
+          xterm.write(writeBuffer)
+        }
+        writeBuffer = ''
+      }
       rafId = null
     }
     const unsubOutput = window.api.onShellOutput((id, data) => {
@@ -89,25 +136,23 @@ export default function ShellTerminal({ agentId, fontSize = 12 }: Props): JSX.El
       unsubOutput()
       unsubExit()
       xterm.dispose()
+      xtermRef.current = null
+      fitRef.current = null
     }
   }, [agentId])
 
-  // Update font size without remounting.
+  // Refit when becoming visible.
   useEffect(() => {
-    // Font size changes are handled by the parent re-creating the component
-    // or could be applied if we kept a ref. Simple approach: let the next
-    // agentId change recreate it. For now fontSize changes are minor.
-  }, [fontSize])
+    if (visible && fitRef.current) {
+      requestAnimationFrame(() => fitRef.current?.fit())
+    }
+  }, [visible])
 
   return (
     <div
       ref={containerRef}
       style={{ width: '100%', height: '100%', background: '#f8fafc' }}
-      onClick={() => {
-        // Re-focus xterm when clicking anywhere in the container.
-        const textarea = containerRef.current?.querySelector('textarea')
-        textarea?.focus()
-      }}
+      onClick={() => xtermRef.current?.focus()}
     />
   )
 }

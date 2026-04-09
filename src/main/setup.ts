@@ -6,8 +6,10 @@ import { app } from 'electron'
 const STATUSLINE_SCRIPT = `#!/bin/sh
 # Installed by multiagent. Forwards Claude Code statusline JSON to
 # the per-agent named pipe when running under multiagent supervision.
-if [ -n "$MULTIAGENT_STATUS_PIPE" ] && [ -p "$MULTIAGENT_STATUS_PIPE" ]; then
-    cat > "$MULTIAGENT_STATUS_PIPE"
+if [ -n "$MULTIAGENT_STATUS_PIPE" ]; then
+    if [ -p "$MULTIAGENT_STATUS_PIPE" ] || [ -S "$MULTIAGENT_STATUS_PIPE" ] || [ -e "$MULTIAGENT_STATUS_PIPE" ]; then
+        cat > "$MULTIAGENT_STATUS_PIPE"
+    fi
 fi
 `
 
@@ -27,6 +29,9 @@ export function pipesDir(): string {
 }
 
 export function agentPipePath(agentId: string): string {
+  if (process.platform === 'win32') {
+    return `\\\\.\\pipe\\multiagent-${agentId}`
+  }
   return path.join(pipesDir(), agentId)
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Component, type ReactNode } from 'react'
 import { useAgentsStore, initStoreListeners } from './store/agents'
 import { useSettings } from './store/settings'
@@ -41,6 +41,11 @@ export default function App(): JSX.Element {
   }, [])
 
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null
+
+  // Track which agents have been opened at least once (lazy mount).
+  const mountedRef = useRef(new Set<string>())
+  if (selectedId) mountedRef.current.add(selectedId)
+
   console.log('[App] render: agents:', agents.length, 'selectedId:', selectedId, 'selected:', selectedAgent?.name ?? 'null', 'loading:', loading)
 
   if (loading) {
@@ -59,20 +64,36 @@ export default function App(): JSX.Element {
 <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
         {/* Sidebar */}
         <div style={{
-          width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column',
-          borderRight: '1px solid var(--border)', background: 'var(--surface)',
+          width: 480, flexShrink: 0, display: 'flex', flexDirection: 'column',
+          borderRight: '1px solid var(--border)',
+          background: 'linear-gradient(135deg, #ffffff 0%, #fcfcfd 50%, #f8f9fb 100%)',
           overflow: 'hidden',
         }}>
           <AgentList />
         </div>
 
-        {/* Main panel */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)' }}>
-          {selectedAgent ? (
-            <ErrorBoundary>
-              <AgentDetail agent={selectedAgent} />
-            </ErrorBoundary>
-          ) : (
+        {/* Main panel — all agents stay mounted, only selected is visible */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)', position: 'relative' }}>
+          {agents.filter(a => mountedRef.current.has(a.id)).map(agent => {
+            const sel = agent.id === selectedId
+            return (
+              <div
+                key={agent.id}
+                style={{
+                  position: 'absolute', inset: 0,
+                  visibility: sel ? 'visible' : 'hidden',
+                  zIndex: sel ? 1 : 0,
+                  display: 'flex', flexDirection: 'column',
+                  pointerEvents: sel ? 'auto' : 'none',
+                }}
+              >
+                <ErrorBoundary>
+                  <AgentDetail agent={agent} isSelected={sel} />
+                </ErrorBoundary>
+              </div>
+            )
+          })}
+          {!selectedAgent && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 8 }}>
               <span style={{ fontSize: 32 }}>🤖</span>
               <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>

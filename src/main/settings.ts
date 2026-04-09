@@ -7,14 +7,22 @@ const store = new Store<AppSettings>({ name: 'settings', defaults: DEFAULT_SETTI
 export function getSettings(): AppSettings {
   return {
     fontSize:     store.get('fontSize',     DEFAULT_SETTINGS.fontSize),
+    scrollSpeed:  store.get('scrollSpeed',  DEFAULT_SETTINGS.scrollSpeed),
+    scrollback:   store.get('scrollback',   DEFAULT_SETTINGS.scrollback),
+    skipPermissions: store.get('skipPermissions', DEFAULT_SETTINGS.skipPermissions),
     devTools:     store.get('devTools',     DEFAULT_SETTINGS.devTools),
     resumeOnOpen: store.get('resumeOnOpen', DEFAULT_SETTINGS.resumeOnOpen),
+    notifications: store.get('notifications', DEFAULT_SETTINGS.notifications),
   }
 }
 
 export function saveSettings(s: Partial<AppSettings>): AppSettings {
   if (s.fontSize     !== undefined) store.set('fontSize',     s.fontSize)
+  if (s.scrollSpeed  !== undefined) store.set('scrollSpeed',  s.scrollSpeed)
+  if (s.scrollback   !== undefined) store.set('scrollback',   s.scrollback)
+  if (s.skipPermissions !== undefined) store.set('skipPermissions', s.skipPermissions)
   if (s.devTools     !== undefined) store.set('devTools',     s.devTools)
   if (s.resumeOnOpen !== undefined) store.set('resumeOnOpen', s.resumeOnOpen)
+  if (s.notifications !== undefined) store.set('notifications', s.notifications)
   return getSettings()
 }

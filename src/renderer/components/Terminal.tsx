@@ -2,14 +2,10 @@ import { useEffect, useRef } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 
-interface Props { agentId: string; fontSize?: number }
-
-interface Cached { xterm: XTerm; fit: FitAddon }
-
-// Keep terminals alive across agent switches — never dispose them.
-const cache = new Map<string, Cached>()
+interface Props { agentId: string; fontSize?: number; scrollSpeed?: number; scrollback?: number; visible?: boolean }
 
 const THEME = {
   background:          '#ffffff',
@@ -24,88 +20,136 @@ const THEME = {
   brightCyan:  '#06b6d4', brightWhite: '#ffffff',
 }
 
-function createAndCache(agentId: string, fontSize: number): Cached {
-  const xterm = new XTerm({
-    theme: THEME,
-    fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, monospace',
-    fontSize,
-    lineHeight: 1.45,
-    cursorBlink: true,
-    allowProposedApi: true,
-    scrollback: 5000,
-    padding: 12,
-    linkHandler: {
-      activate: (_e: MouseEvent, uri: string) => window.api.openExternal(uri),
-    },
-  } as any)
-
-  const fit = new FitAddon()
-  xterm.loadAddon(fit)
-  xterm.loadAddon(new WebLinksAddon((_e, uri) => window.api.openExternal(uri)))
-
-  xterm.onData(data => window.api.sendInput(agentId, data))
-
-  // Wire PTY output → xterm with write batching.
-  // All chunks arriving within one animation frame are coalesced into a single
-  // xterm.write() call, so the terminal jumps to the bottom once rather than
-  // scrolling line-by-line through each incoming chunk.
-  let writeBuffer = ''
-  let rafId: number | null = null
-  const flush = () => {
-    if (writeBuffer) { xterm.write(writeBuffer); writeBuffer = '' }
-    rafId = null
-  }
-  window.api.onTerminalOutput((id, data) => {
-    if (id !== agentId) return
-    writeBuffer += data
-    if (rafId === null) rafId = requestAnimationFrame(flush)
-  })
-
-  const inst = { xterm, fit }
-  cache.set(agentId, inst)
-  return inst
-}
-
-export default function Terminal({ agentId, fontSize = 13 }: Props): JSX.Element {
+export default function Terminal({ agentId, fontSize = 13, scrollSpeed = 3, scrollback = 5000, visible = true }: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
+  const xtermRef = useRef<XTerm | null>(null)
+  const fitRef = useRef<FitAddon | null>(null)
+  const visibleRef = useRef(visible)
+  const writeBufferRef = useRef('')
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Update font size live without rebuilding.
-  useEffect(() => {
-    const inst = cache.get(agentId)
-    if (inst) {
-      inst.xterm.options.fontSize = fontSize
-      inst.fit.fit()
-    }
-  }, [fontSize, agentId])
+  // Keep visibleRef in sync.
+  visibleRef.current = visible
 
+  // Create xterm once on mount, dispose on unmount.
   useEffect(() => {
     if (!containerRef.current) return
 
-    let inst = cache.get(agentId)
+    const xterm = new XTerm({
+      theme: THEME,
+      fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, monospace',
+      fontSize,
+      lineHeight: 1.45,
+      cursorBlink: true,
+      allowProposedApi: true,
+      scrollback,
+      padding: 12,
+      scrollSensitivity: scrollSpeed,
+      fastScrollModifier: 'alt',
+      fastScrollSensitivity: scrollSpeed * 3,
+      linkHandler: {
+        activate: (_e: MouseEvent, uri: string) => window.api.openExternal(uri),
+      },
+    } as any)
 
-    // Safely detach any previous terminal — don't use innerHTML='' which destroys xterm's DOM.
-    while (containerRef.current.firstChild) {
-      containerRef.current.removeChild(containerRef.current.firstChild)
+    const fit = new FitAddon()
+    xterm.loadAddon(fit)
+    xterm.loadAddon(new WebLinksAddon((_e, uri) => window.api.openExternal(uri)))
+
+    try {
+      const webgl = new WebglAddon()
+      webgl.onContextLoss(() => webgl.dispose())
+      xterm.loadAddon(webgl)
+    } catch { /* GPU unavailable — canvas renderer used */ }
+
+    xterm.open(containerRef.current)
+
+    if (xterm.element) {
+      xterm.element.style.background = '#ffffff'
+      const vp = xterm.element.querySelector('.xterm-viewport') as HTMLElement | null
+      if (vp) vp.style.backgroundColor = '#ffffff'
     }
 
-    if (!inst) {
-      inst = createAndCache(agentId, fontSize)
-      inst.xterm.open(containerRef.current)
-      // Paint the xterm root element white so the gap below the last row isn't black.
-      if (inst.xterm.element) inst.xterm.element.style.background = '#ffffff'
-    } else {
-      if (inst.xterm.element) {
-        containerRef.current.appendChild(inst.xterm.element)
+    xtermRef.current = xterm
+    fitRef.current = fit
+
+    xterm.onData(data => window.api.sendInput(agentId, data))
+
+    xterm.onSelectionChange(() => {
+      const sel = xterm.getSelection()
+      if (sel) window.api.clipboardWrite(sel)
+    })
+
+    // Intercept paste in capture phase (before xterm's handler) to strip trailing newlines.
+    // Wrap in bracketed paste sequences so Claude treats it as paste (no mid-paste submit)
+    // and terminal:input skips markThinking (filtered by \x1b check).
+    const pasteHandler = (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData('text/plain')
+      if (text) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        const cleaned = text.replace(/[\r\n]+$/, '')
+        window.api.sendInput(agentId, `\x1b[200~${cleaned}\x1b[201~`)
       }
     }
+    const ta = containerRef.current?.querySelector('textarea')
+    ta?.addEventListener('paste', pasteHandler as EventListener, { capture: true })
 
-    const { xterm, fit } = inst
+    xterm.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'C' && e.type === 'keydown') {
+        const sel = xterm.getSelection()
+        if (sel) window.api.clipboardWrite(sel)
+        return false
+      }
+      return true
+    })
+
+    // --- Buffered output with scroll-lock ---
+    // When the user scrolls up, new output should NOT yank the viewport to the bottom.
+    let userScrolledUp = false
+    const viewport = () => xterm.element?.querySelector('.xterm-viewport') as HTMLElement | null
+
+    // Detect user scroll position: if not at bottom, they're reading history.
+    xterm.onScroll(() => {
+      const buf = xterm.buffer.active
+      userScrolledUp = buf.viewportY < buf.baseY
+    })
+
+    const flush = () => {
+      if (writeBufferRef.current) {
+        if (userScrolledUp) {
+          const vp = viewport()
+          const savedScrollTop = vp?.scrollTop ?? 0
+          xterm.write(writeBufferRef.current)
+          // Restore scroll position synchronously after write.
+          if (vp) vp.scrollTop = savedScrollTop
+        } else {
+          xterm.write(writeBufferRef.current)
+        }
+        writeBufferRef.current = ''
+      }
+      flushTimerRef.current = null
+    }
+
+    const unsubOutput = window.api.onTerminalOutput((id, data) => {
+      if (id !== agentId) return
+      writeBufferRef.current += data
+      if (visibleRef.current && flushTimerRef.current === null) {
+        flushTimerRef.current = setTimeout(flush, 32)
+      }
+    })
+
+    const unsubClear = window.api.onTerminalClear((id) => {
+      if (id !== agentId) return
+      writeBufferRef.current = ''
+      if (flushTimerRef.current) { clearTimeout(flushTimerRef.current); flushTimerRef.current = null }
+      xterm.reset()
+    })
 
     requestAnimationFrame(() => {
       fit.fit()
       const { cols, rows } = xterm
       if (cols > 0 && rows > 0) window.api.resizeTerminal(agentId, cols, rows)
-      xterm.focus()
     })
 
     const ro = new ResizeObserver(() => {
@@ -117,22 +161,56 @@ export default function Terminal({ agentId, fontSize = 13 }: Props): JSX.Element
 
     return () => {
       ro.disconnect()
-      // Do NOT dispose or remove the xterm element —
-      // it lives in the cache and will be reattached on next switch.
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
+      unsubOutput()
+      unsubClear()
+      xterm.dispose()
+      xtermRef.current = null
+      fitRef.current = null
     }
   }, [agentId])
+
+  // Handle fontSize / scrollSpeed changes.
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.options.fontSize = fontSize
+      xtermRef.current.options.scrollSensitivity = scrollSpeed
+      xtermRef.current.options.fastScrollSensitivity = scrollSpeed * 3
+      fitRef.current?.fit()
+    }
+  }, [fontSize, scrollSpeed])
+
+  // Handle visibility changes: flush buffer, refit, focus.
+  useEffect(() => {
+    const xterm = xtermRef.current
+    const fit = fitRef.current
+    if (!xterm || !fit) return
+
+    if (visible) {
+      // Flush buffered output.
+      if (writeBufferRef.current) {
+        if (flushTimerRef.current) { clearTimeout(flushTimerRef.current); flushTimerRef.current = null }
+        xterm.write(writeBufferRef.current)
+        writeBufferRef.current = ''
+      }
+      // Refit after becoming visible (dimensions may have changed).
+      requestAnimationFrame(() => {
+        fit.fit()
+        const { cols, rows } = xterm
+        if (cols > 0 && rows > 0) window.api.resizeTerminal(agentId, cols, rows)
+        xterm.focus()
+      })
+    } else {
+      // Pause flush timer while hidden.
+      if (flushTimerRef.current) { clearTimeout(flushTimerRef.current); flushTimerRef.current = null }
+    }
+  }, [visible, agentId])
 
   return (
     <div
       ref={containerRef}
-      style={{
-        width: '100%', height: '100%',
-        overflow: 'hidden',
-        background: '#ffffff',
-      }}
-      onClick={() => {
-        cache.get(agentId)?.xterm.focus()
-      }}
+      style={{ width: '100%', height: '100%', overflow: 'hidden', background: '#ffffff' }}
+      onClick={() => xtermRef.current?.focus()}
     />
   )
 }

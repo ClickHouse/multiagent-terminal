@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Rounded square background -->
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="#1e293b"/>
+
+  <!-- Connection lines between nodes -->
+  <line x1="220" y1="178" x2="178" y2="298" stroke="#94a3b8" stroke-width="5" stroke-linecap="round"/>
+  <line x1="292" y1="178" x2="334" y2="298" stroke="#94a3b8" stroke-width="5" stroke-linecap="round"/>
+  <line x1="200" y1="332" x2="312" y2="332" stroke="#94a3b8" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- Three agent nodes arranged in a triangle -->
+  <!-- Top center -->
+  <circle cx="256" cy="148" r="48" fill="#3b82f6"/>
+  <rect x="240" y="132" width="14" height="32" rx="2" fill="#fff"/>
+  <rect x="258" y="132" width="14" height="32" rx="2" fill="#fff" opacity="0.4"/>
+
+  <!-- Bottom left — green/active -->
+  <circle cx="148" cy="332" r="48" fill="#16a34a"/>
+  <rect x="132" y="316" width="14" height="32" rx="2" fill="#fff"/>
+  <rect x="150" y="316" width="14" height="32" rx="2" fill="#fff" opacity="0.4"/>
+
+  <!-- Bottom right — amber/thinking -->
+  <circle cx="364" cy="332" r="48" fill="#d97706"/>
+  <rect x="348" y="316" width="14" height="32" rx="2" fill="#fff"/>
+  <rect x="366" y="316" width="14" height="32" rx="2" fill="#fff" opacity="0.4"/>
+</svg>

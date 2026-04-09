@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Pencil, Copy, ExternalLink, GitCompare, GitPullRequest, RotateCcw, RefreshCcw, Trash2 } from 'lucide-react'
+import { Pencil, Copy, ExternalLink, GitCompare, GitPullRequest, RotateCcw, RefreshCcw, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
 import { Agent } from '../../shared/types'
 
 interface Props {
@@ -20,15 +20,16 @@ export default function ContextMenu({ x, y, agent, onClose, onRemove, onRestart,
   const items = [
     { icon: <Pencil size={13} />,         label: 'Rename',                  action: () => { onRename?.(); onClose() } },
     { icon: <Copy size={13} />,           label: 'Clone agent',             action: () => { onClone?.(); onClose() } },
+    { icon: <ArrowUp size={13} />,        label: 'Move up',                 action: () => { window.api.moveAgent(agent.id, 'up'); onClose() } },
+    { icon: <ArrowDown size={13} />,      label: 'Move down',               action: () => { window.api.moveAgent(agent.id, 'down'); onClose() } },
     null,
     { icon: <ExternalLink size={13} />,   label: 'Open in VSCode',          action: () => { window.api.openVSCode(agent.id); onClose() } },
     { icon: <GitCompare size={13} />,     label: 'View diff',               action: () => { window.api.openDiff(agent.id); onClose() } },
     { icon: <GitPullRequest size={13} />, label: 'Open PR',                 action: () => { window.api.openPR(agent.id); onClose() } },
     null,
     {
-      icon: <RotateCcw size={13} />, label: 'Restart',
+      icon: <RotateCcw size={13} />, label: 'Restart (new context)',
       action: () => { onRestart(); onClose() },
-      disabled: agent.status !== 'stopped' && agent.status !== 'error',
     },
     {
       icon: <RefreshCcw size={13} />, label: 'Reset (checkout master, pull)',

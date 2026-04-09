@@ -1,12 +1,28 @@
-import { useRef, useState, useCallback, useEffect } from 'react'
-import { Code2, GitCompare, GitPullRequest, RotateCcw, GitBranch } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Code2, GitCompare, GitPullRequest, RotateCcw, GitBranch, TerminalSquare, GitGraph } from 'lucide-react'
 import { Agent, AgentStatus } from '../../shared/types'
 import { squashHome } from '../utils'
 import { useSettings } from '../store/settings'
 import Terminal from './Terminal'
 import ShellTerminal from './ShellTerminal'
+import GitLog from './GitLog'
 
-interface Props { agent: Agent }
+interface Props { agent: Agent; isSelected?: boolean }
+
+const MINUTE_BUCKETS = [1, 2, 3, 4, 5, 10, 15, 20, 25, 30, 40, 50]
+
+function timeAgo(ts: number | null): string | null {
+  if (!ts) return null
+  const min = Math.floor((Date.now() - ts) / 60000)
+  if (min < 1) return '<1m ago'
+  if (min < 60) {
+    const bucket = MINUTE_BUCKETS.findLast(b => b <= min) ?? 1
+    return `${bucket}m ago`
+  }
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  return `${Math.floor(hr / 24)}d ago`
+}
 
 const STATUS_VARS: Record<AgentStatus, { fg: string; bg: string; dot: string; label: string }> = {
   starting: { fg: 'var(--s-starting-fg)', bg: 'var(--s-starting-bg)', dot: 'var(--s-starting-dot)', label: 'Starting' },
@@ -17,55 +33,71 @@ const STATUS_VARS: Record<AgentStatus, { fg: string; bg: string; dot: string; la
   stopped:  { fg: 'var(--s-stopped-fg)', bg: 'var(--s-stopped-bg)', dot: 'var(--s-stopped-dot)', label: 'Stopped'  },
 }
 
-function IconBtn({ icon, label, onClick, primary, title }: { icon: React.ReactNode; label?: string; onClick: () => void; primary?: boolean; title?: string }) {
+function IconBtn({ icon, label, onClick, primary, title, disabled }: { icon: React.ReactNode; label?: string; onClick: () => void; primary?: boolean; title?: string; disabled?: boolean }) {
   return (
-    <button onClick={onClick} title={title ?? label} style={{
+    <button onClick={disabled ? undefined : onClick} title={title ?? label} disabled={disabled} style={{
       display: 'inline-flex', alignItems: 'center', gap: 5,
       padding: '4px 10px', borderRadius: 'var(--radius)', fontSize: 12, fontWeight: 500,
-      cursor: 'pointer',
+      cursor: disabled ? 'default' : 'pointer',
+      opacity: disabled ? 0.4 : 1,
       border: primary ? 'none' : '1px solid var(--border)',
       background: primary ? 'var(--accent)' : 'var(--bg)',
       color: primary ? '#fff' : 'var(--text-secondary)',
       transition: 'background 0.1s, border-color 0.1s',
     }}
-      onMouseEnter={e => { e.currentTarget.style.background = primary ? 'var(--accent-hover)' : 'var(--surface2)' }}
-      onMouseLeave={e => { e.currentTarget.style.background = primary ? 'var(--accent)' : 'var(--bg)' }}
+      onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = primary ? 'var(--accent-hover)' : 'var(--surface2)' }}
+      onMouseLeave={e => { if (!disabled) e.currentTarget.style.background = primary ? 'var(--accent)' : 'var(--bg)' }}
     >
       {icon}{label}
     </button>
   )
 }
 
-const MIN_SHELL_H = 80
-const DEFAULT_SHELL_H = 180
+const BOTTOM_PANEL_H = 220
 
-export default function AgentDetail({ agent }: Props): JSX.Element {
-  console.log('[AgentDetail] render:', agent?.name, agent?.status)
+export default function AgentDetail({ agent, isSelected = true }: Props): JSX.Element {
+  console.log('[AgentDetail] render:', agent?.name, agent?.status, 'selected:', isSelected)
   const sv = STATUS_VARS[agent.status]
   if (!sv) console.error('[AgentDetail] unknown status:', agent?.status)
   const isActive = agent.status !== 'stopped' && agent.status !== 'error'
   const fontSize = useSettings(s => s.fontSize)
-  const shellHRef = useRef(DEFAULT_SHELL_H)
-  const shellPanelRef = useRef<HTMLDivElement>(null)
-  const dragRef = useRef<{ startY: number; startH: number } | null>(null)
+  const scrollSpeed = useSettings(s => s.scrollSpeed)
+  const scrollback = useSettings(s => s.scrollback)
   const [diffLoading, setDiffLoading] = useState(false)
+  const [bottomTab, setBottomTab] = useState<'shell' | 'gitlog' | null>(null)
+
+  // Tick to keep "ago" labels fresh + drive terminal border fade
+  const [, tick] = useState(0)
+  const finishedAgo = agent.lastFinishedAt ? Date.now() - agent.lastFinishedAt : Infinity
+  const terminalFading = agent.status === 'idle' && finishedAgo < 3000
+  useEffect(() => {
+    if (!isSelected) return
+    const t = setInterval(() => tick(n => n + 1), terminalFading ? 50 : 30000)
+    return () => clearInterval(t)
+  }, [isSelected, terminalFading])
 
   // Lazily start the agent PTY when first opened, and clear the unseen badge.
   useEffect(() => {
+    if (!isSelected) return
     window.api.ensureRunning(agent.id)
     window.api.markSeen(agent.id)
-  }, [agent.id])
+  }, [agent.id, isSelected])
 
-  // Poll changed file count + PR number every 10s.
+  // Poll file count + PR every 30s, line stats every 5 min (only when selected).
   useEffect(() => {
+    if (!isSelected) return
     window.api.getChangedFiles(agent.id)
     window.api.getPRNumber(agent.id)
-    const t = setInterval(() => {
+    window.api.getLineStats(agent.id)
+    const fast = setInterval(() => {
       window.api.getChangedFiles(agent.id)
       window.api.getPRNumber(agent.id)
-    }, 10000)
-    return () => clearInterval(t)
-  }, [agent.id])
+    }, 30000)
+    const slow = setInterval(() => {
+      window.api.getLineStats(agent.id)
+    }, 300000)
+    return () => { clearInterval(fast); clearInterval(slow) }
+  }, [agent.id, isSelected])
 
   const handleDiff = async () => {
     setDiffLoading(true)
@@ -76,83 +108,128 @@ export default function AgentDetail({ agent }: Props): JSX.Element {
     }
   }
 
-  const onDividerMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    dragRef.current = { startY: e.clientY, startH: shellHRef.current }
+  const toggleTab = (tab: 'shell' | 'gitlog') => {
+    setBottomTab(prev => prev === tab ? null : tab)
+  }
 
-    const onMove = (ev: MouseEvent) => {
-      if (!dragRef.current || !shellPanelRef.current) return
-      const newH = Math.max(MIN_SHELL_H, dragRef.current.startH + (dragRef.current.startY - ev.clientY))
-      shellHRef.current = newH
-      // Update DOM directly — no React re-render during drag.
-      shellPanelRef.current.style.height = `${newH}px`
-    }
-
-    const onUp = () => {
-      dragRef.current = null
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      // Trigger ResizeObserver in the terminal components so xterm refits.
-      shellPanelRef.current?.dispatchEvent(new Event('resize'))
-    }
-
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [])
+  const isWorking = agent.status === 'thinking' || agent.status === 'working'
+  const doneFade = !isWorking && agent.status === 'idle' && finishedAgo < 3000
+    ? Math.max(0, 1 - finishedAgo / 3000) : 0
+  const stateBorderColor = isWorking
+    ? '#eab308'
+    : doneFade > 0
+    ? `rgba(34, 197, 94, ${doneFade})`
+    : 'transparent'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
       {/* Header */}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '10px 16px', borderBottom: '1px solid var(--border)',
-        background: 'var(--surface)', flexShrink: 0, gap: 12, minHeight: 52,
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--surface)', flexShrink: 0,
+        padding: '12px 16px',
+        borderLeft: `2px solid ${stateBorderColor}`,
+        borderRight: `2px solid ${stateBorderColor}`,
+        borderTop: `2px solid ${stateBorderColor}`,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-          {/* Status dot */}
-          <span style={{
-            width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
-            background: sv.dot,
-            boxShadow: isActive ? `0 0 0 3px ${sv.dot}35` : 'none',
-            transition: 'box-shadow 0.3s',
-          }} />
-
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
-                {agent.name}
-              </span>
+        {/* Row 1: Identity + Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+            {/* Status indicator */}
+            {(agent.status === 'thinking' || agent.status === 'working' || agent.status === 'starting') ? (
+              <svg width="17" height="17" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, animation: 'statusSpin 0.7s linear infinite' }}>
+                <circle cx="8" cy="8" r="4.5" stroke={sv.dot} strokeOpacity={0.5} strokeWidth={6} />
+                <path d="M8 3.5a4.5 4.5 0 0 1 4.5 4.5" stroke={sv.dot} strokeWidth={6} strokeLinecap="round" />
+              </svg>
+            ) : (
               <span style={{
-                fontSize: 11, fontWeight: 600,
-                color: sv.fg, background: sv.bg,
-                borderRadius: 4, padding: '2px 8px',
-              }}>
-                {sv.label}
-              </span>
-              {(agent.currentBranch || agent.branchName) && (
-                <span style={{
-                  fontSize: 12, fontWeight: 500, fontFamily: 'var(--font-mono)',
-                  color: 'var(--accent)', background: 'var(--accent-light)',
-                  border: '1px solid var(--accent-border)',
-                  borderRadius: 4, padding: '2px 9px',
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                }}>
-                  <GitBranch size={12} strokeWidth={2.2} />
-                  {agent.currentBranch || agent.branchName}
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-              {squashHome(agent.worktreePath)}
-            </div>
+                width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+                background: sv.dot,
+              }} />
+            )}
+
+            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {agent.name}
+            </span>
+
+            <span style={{
+              fontSize: 11, fontWeight: 600,
+              color: sv.fg, background: sv.bg,
+              borderRadius: 4, padding: '2px 8px', flexShrink: 0,
+            }}>
+              {sv.label}
+            </span>
           </div>
 
-          {/* Activity + metrics */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 4, flexShrink: 0 }}>
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+            <IconBtn icon={<Code2 size={14} />} label="VSCode" onClick={() => window.api.openVSCode(agent.id)} />
+            <IconBtn icon={<GitCompare size={14} />} label="Diff" onClick={handleDiff} title="View diff" />
+            <IconBtn
+              icon={<GitPullRequest size={14} />}
+              label={agent.prNumber ? `${agent.prRepo || ''}#${agent.prNumber}` : (agent.prRepo || undefined)}
+              title={agent.prNumber ? `Open PR ${agent.prRepo}#${agent.prNumber}` : (agent.prRepo ? `Open ${agent.prRepo} on GitHub` : 'No repo')}
+              onClick={() => agent.prNumber ? window.api.openPR(agent.id) : window.api.openRepo(agent.id)}
+              primary={!!agent.prNumber}
+              disabled={!agent.prNumber && !agent.prRepo}
+            />
+            <IconBtn icon={<RotateCcw size={14} />} label="Restart" title="Restart claude (new context)" onClick={() => window.api.restartAgent(agent.id)} />
+          </div>
+        </div>
+
+        {/* Row 2: Path + Branch + Stats | Model + Context + Cost */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 8, fontSize: 12, fontFamily: 'var(--font-mono)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 0, minWidth: 0 }}>
+            {(() => {
+              const dot = <span style={{ color: 'var(--text-dim)', opacity: 0.4, margin: '0 6px' }}>&middot;</span>
+              const items: React.ReactNode[] = []
+              items.push(
+                <span key="path" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, color: 'var(--text-dim)' }}>
+                  {squashHome(agent.worktreePath)}
+                </span>
+              )
+              if (agent.currentBranch || agent.branchName) items.push(
+                <span key="branch" style={{ color: 'var(--accent)', flexShrink: 0 }}>
+                  <GitBranch size={11} strokeWidth={2.2} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 3 }} />
+                  {agent.currentBranch || agent.branchName}
+                </span>
+              )
+              if (agent.changedFiles > 0) items.push(
+                <span key="files" style={{ color: 'var(--text-secondary)', flexShrink: 0 }}>
+                  {agent.changedFiles} file{agent.changedFiles === 1 ? '' : 's'}
+                </span>
+              )
+              if (agent.linesAdded > 0 || agent.linesRemoved > 0) items.push(
+                <span key="lines" style={{ flexShrink: 0 }}>
+                  <span style={{ color: '#16a34a' }}>+{agent.linesAdded}</span>
+                  {' '}
+                  <span style={{ color: '#dc2626' }}>-{agent.linesRemoved}</span>
+                </span>
+              )
+              // Show one status: working/thinking shows elapsed since sent, idle shows done time
+              const isAgentActive = agent.status === 'thinking' || agent.status === 'working'
+              if (isAgentActive && agent.lastInputAt) {
+                items.push(
+                  <span key="activity" title={new Date(agent.lastInputAt).toLocaleTimeString()} style={{ color: 'var(--s-working-fg)', flexShrink: 0 }}>
+                    working for {timeAgo(agent.lastInputAt)?.replace(' ago', '')}
+                  </span>
+                )
+              } else if (!isAgentActive && agent.lastFinishedAt) {
+                items.push(
+                  <span key="done" title={new Date(agent.lastFinishedAt).toLocaleTimeString()} style={{ color: 'var(--text-dim)', flexShrink: 0 }}>
+                    done {timeAgo(agent.lastFinishedAt)}
+                  </span>
+                )
+              }
+              return items.map((item, i) => <>{i > 0 && dot}{item}</>)
+            })()}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
             {agent.contextPercent > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 52, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ width: 48, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
                   <div style={{
                     height: '100%', borderRadius: 2,
                     width: `${agent.contextPercent}%`,
@@ -161,14 +238,19 @@ export default function AgentDetail({ agent }: Props): JSX.Element {
                               : 'var(--accent)',
                   }} />
                 </div>
-                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                <span style={{
+                  fontWeight: 500,
+                  color: agent.contextPercent >= 90 ? 'var(--s-error-fg)'
+                        : agent.contextPercent >= 70 ? 'var(--s-thinking-fg)'
+                        : 'var(--text-secondary)',
+                }}>
                   {Math.round(agent.contextPercent)}%
                 </span>
               </div>
             )}
             {agent.model && typeof agent.model === 'string' && (
               <span style={{
-                fontSize: 11, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)',
+                color: 'var(--text-secondary)',
                 background: 'var(--surface2)', borderRadius: 4, padding: '2px 7px',
                 border: '1px solid var(--border)',
               }}>
@@ -176,76 +258,69 @@ export default function AgentDetail({ agent }: Props): JSX.Element {
               </span>
             )}
             {agent.costUSD > 0 && (
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                ${agent.costUSD.toFixed(4)}
+              <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>
+                ${agent.costUSD.toFixed(2)}
               </span>
             )}
           </div>
         </div>
-
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-          <IconBtn icon={<Code2 size={14} />} label="VSCode" onClick={() => window.api.openVSCode(agent.id)} />
-          <button
-            onClick={handleDiff} disabled={diffLoading}
-            title={`View diff${agent.changedFiles > 0 ? ` (${agent.changedFiles} changed)` : ''}`}
-            style={{
-              position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '4px 10px', borderRadius: 'var(--radius)', fontSize: 12, fontWeight: 500,
-              cursor: diffLoading ? 'wait' : 'pointer',
-              border: agent.changedFiles > 0 ? '1px solid var(--s-working-dot)' : '1px solid var(--border)',
-              background: agent.changedFiles > 0 ? 'var(--s-working-bg)' : 'var(--bg)',
-              color: agent.changedFiles > 0 ? 'var(--s-working-fg)' : 'var(--text-secondary)',
-            }}
-          >
-            <GitCompare size={14} />
-            {agent.changedFiles > 0 && (
-              <span style={{
-                position: 'absolute', top: -6, right: -6,
-                background: 'var(--s-working-dot)', color: '#fff',
-                borderRadius: 8, fontSize: 10, fontWeight: 700,
-                padding: '0 4px', minWidth: 16, textAlign: 'center',
-                lineHeight: '16px', height: 16, boxShadow: '0 0 0 2px var(--bg)',
-              }}>
-                {agent.changedFiles > 99 ? '99+' : agent.changedFiles}
-              </span>
-            )}
-          </button>
-          <IconBtn
-            icon={<GitPullRequest size={14} />}
-            label={agent.prNumber ? `${agent.prRepo || ''}#${agent.prNumber}` : undefined}
-            title={agent.prNumber ? `Open PR ${agent.prRepo}#${agent.prNumber}` : 'Open PR'}
-            onClick={() => window.api.openPR(agent.id)}
-            primary={!!agent.prNumber}
-          />
-          {agent.status === 'error' && (
-            <IconBtn icon={<RotateCcw size={14} />} label="Restart" onClick={() => window.api.restartAgent(agent.id)} primary />
-          )}
-        </div>
       </div>
 
       {/* Claude terminal */}
-      <div style={{ flex: 1, overflow: 'hidden', padding: '10px 12px 0', background: '#ffffff' }}>
-        <Terminal agentId={agent.id} fontSize={fontSize} />
+      <div style={{
+        flex: 1, overflow: 'hidden', padding: '8px 8px 0', background: '#ffffff', minHeight: 0,
+        borderLeft: `2px solid ${stateBorderColor}`,
+        borderRight: `2px solid ${stateBorderColor}`,
+      }}>
+        <Terminal agentId={agent.id} fontSize={fontSize} scrollSpeed={scrollSpeed} scrollback={scrollback} visible={isSelected} />
       </div>
 
-      {/* Draggable divider */}
-      <div
-        onMouseDown={onDividerMouseDown}
-        style={{
-          height: 6, flexShrink: 0, cursor: 'row-resize',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'var(--surface)',
-          borderTop: '1px solid var(--border)',
-          userSelect: 'none',
-        }}
-      >
-        <div style={{ width: 32, height: 2, borderRadius: 1, background: 'var(--border-strong)' }} />
-      </div>
+      {/* Bottom bar + collapsible panel */}
+      <div style={{
+        flexShrink: 0, borderTop: '1px solid var(--border)',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Tab bar — always visible at bottom */}
+        <div style={{
+          display: 'flex', gap: 0, background: 'var(--surface)',
+          borderBottom: bottomTab ? '1px solid var(--border)' : 'none',
+        }}>
+          {([
+            { key: 'shell' as const, label: 'Shell', icon: <TerminalSquare size={12} /> },
+            { key: 'gitlog' as const, label: 'Git Log', icon: <GitGraph size={12} /> },
+          ]).map(tab => {
+            const active = bottomTab === tab.key
+            return (
+              <button
+                key={tab.key}
+                onClick={() => toggleTab(tab.key)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '6px 14px', fontSize: 12, fontWeight: active ? 600 : 500,
+                  cursor: 'pointer',
+                  background: active ? 'var(--bg)' : 'transparent',
+                  color: active ? 'var(--text)' : 'var(--text-dim)',
+                  border: 'none',
+                  borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
+                }}
+              >
+                {tab.icon}{tab.label}
+              </button>
+            )
+          })}
+        </div>
 
-      {/* Shell terminal */}
-      <div ref={shellPanelRef} style={{ height: DEFAULT_SHELL_H, flexShrink: 0, overflow: 'hidden', background: '#f8fafc', padding: '6px 8px 0' }}>
-        <ShellTerminal agentId={agent.id} fontSize={Math.max(11, fontSize - 1)} />
+        {/* Panel content — only rendered when a tab is active */}
+        {bottomTab && (
+          <div style={{ height: BOTTOM_PANEL_H, overflow: 'hidden', background: bottomTab === 'shell' ? '#f8fafc' : 'var(--bg)', padding: bottomTab === 'shell' ? '4px 8px 0' : '0' }}>
+            <div style={{ display: bottomTab === 'shell' ? 'block' : 'none', height: '100%' }}>
+              <ShellTerminal agentId={agent.id} fontSize={Math.max(11, fontSize - 1)} scrollSpeed={scrollSpeed} visible={isSelected && bottomTab === 'shell'} />
+            </div>
+            <div style={{ display: bottomTab === 'gitlog' ? 'block' : 'none', height: '100%' }}>
+              <GitLog agentId={agent.id} visible={isSelected && bottomTab === 'gitlog'} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
