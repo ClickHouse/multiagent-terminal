@@ -12,12 +12,15 @@ Claude Code is powerful but single-threaded. You wait for one task to finish bef
 
 ## Features
 
+- **No flickering** --- unlike raw Claude Code terminal, the UI never flickers or redraws
+- **Scroll-safe** --- reading history while agent outputs? Viewport stays put, no scroll hijacking
+- **Session persistence** --- agents resume where they left off after app restart via `--continue`
 - **Parallel agents** --- spawn unlimited Claude sessions, each in its own git worktree
+- **Git worktrees** --- full isolation between agents, no branch conflicts, clean parallel work
 - **Live status** --- thinking/working/done detection via PTY output analysis and named pipes
+- **Notifications** --- system alerts + green/yellow card highlights when agents finish or are working
 - **Terminal per agent** --- full xterm.js with GPU acceleration, scrollback, and bracketed paste
 - **Git-aware** --- branch display, file count, line stats (+/-), PR detection, diff viewer
-- **Notifications** --- system alerts when agents finish, green/yellow card highlights
-- **Drag to reorder** --- organize your agent sidebar however you want
 - **Shell tab** --- auxiliary terminal per agent for manual git/shell commands
 - **Git log** --- commit history with stats, click to view individual diffs
 - **Cross-platform** --- Linux, macOS, Windows (named pipes adapt per OS)
@@ -25,8 +28,8 @@ Claude Code is powerful but single-threaded. You wait for one task to finish bef
 ## Install
 
 ```bash
-git clone https://github.com/fm4v/multiagent.git
-cd multiagent
+git clone https://github.com/ClickHouse/multiagent-terminal.git
+cd multiagent-terminal
 npm install
 ```
 
