@@ -1,25 +1,63 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
   <!-- Rounded square background -->
-  <rect x="16" y="16" width="480" height="480" rx="96" fill="#1e293b"/>
+  <rect width="512" height="512" rx="100" fill="url(#bg)"/>
 
-  <!-- Connection lines between nodes -->
-  <line x1="220" y1="178" x2="178" y2="298" stroke="#94a3b8" stroke-width="5" stroke-linecap="round"/>
-  <line x1="292" y1="178" x2="334" y2="298" stroke="#94a3b8" stroke-width="5" stroke-linecap="round"/>
-  <line x1="200" y1="332" x2="312" y2="332" stroke="#94a3b8" stroke-width="5" stroke-linecap="round"/>
+  <!-- Terminal window -->
+  <rect x="56" y="70" width="400" height="290" rx="16" fill="#0f172a" stroke="#334155" stroke-width="3"/>
+  <!-- Title bar -->
+  <rect x="56" y="70" width="400" height="36" rx="16" fill="#1e293b"/>
+  <rect x="56" y="90" width="400" height="16" fill="#1e293b"/>
+  <!-- Traffic lights -->
+  <circle cx="86" cy="88" r="7" fill="#ef4444"/>
+  <circle cx="108" cy="88" r="7" fill="#eab308"/>
+  <circle cx="130" cy="88" r="7" fill="#22c55e"/>
 
-  <!-- Three agent nodes arranged in a triangle -->
-  <!-- Top center -->
-  <circle cx="256" cy="148" r="48" fill="#3b82f6"/>
-  <rect x="240" y="132" width="14" height="32" rx="2" fill="#fff"/>
-  <rect x="258" y="132" width="14" height="32" rx="2" fill="#fff" opacity="0.4"/>
+  <!-- Agent 1: working -->
+  <text x="78" y="140" font-family="monospace" font-size="21" fill="#22c55e">$</text>
+  <text x="98" y="140" font-family="monospace" font-size="21" fill="#94a3b8">agent-1</text>
+  <text x="290" y="140" font-family="monospace" font-size="17" font-weight="bold" fill="#eab308">WORKING</text>
 
-  <!-- Bottom left — green/active -->
-  <circle cx="148" cy="332" r="48" fill="#16a34a"/>
-  <rect x="132" y="316" width="14" height="32" rx="2" fill="#fff"/>
-  <rect x="150" y="316" width="14" height="32" rx="2" fill="#fff" opacity="0.4"/>
+  <!-- Agent 2: thinking -->
+  <text x="78" y="172" font-family="monospace" font-size="21" fill="#22c55e">$</text>
+  <text x="98" y="172" font-family="monospace" font-size="21" fill="#94a3b8">agent-2</text>
+  <text x="290" y="172" font-family="monospace" font-size="17" font-weight="bold" fill="#3b82f6">THINK..</text>
 
-  <!-- Bottom right — amber/thinking -->
-  <circle cx="364" cy="332" r="48" fill="#d97706"/>
-  <rect x="348" y="316" width="14" height="32" rx="2" fill="#fff"/>
-  <rect x="366" y="316" width="14" height="32" rx="2" fill="#fff" opacity="0.4"/>
+  <!-- Agent 3: done -->
+  <text x="78" y="204" font-family="monospace" font-size="21" fill="#22c55e">$</text>
+  <text x="98" y="204" font-family="monospace" font-size="21" fill="#94a3b8">agent-3</text>
+  <text x="290" y="204" font-family="monospace" font-size="17" font-weight="bold" fill="#22c55e">DONE!</text>
+
+  <!-- Agent 4: oops -->
+  <text x="78" y="236" font-family="monospace" font-size="21" fill="#22c55e">$</text>
+  <text x="98" y="236" font-family="monospace" font-size="21" fill="#94a3b8">agent-4</text>
+  <text x="290" y="236" font-family="monospace" font-size="17" font-weight="bold" fill="#ef4444">OOPS</text>
+
+  <!-- Cursor -->
+  <text x="78" y="268" font-family="monospace" font-size="21" fill="#22c55e">$</text>
+  <rect x="98" y="254" width="12" height="19" fill="#22c55e" opacity="0.8"/>
+
+  <!-- Gremlin peeking from bottom right corner -->
+  <!-- Body -->
+  <ellipse cx="420" cy="440" rx="55" ry="48" fill="#a78bfa"/>
+  <!-- Ears/horns -->
+  <ellipse cx="385" cy="388" rx="12" ry="20" fill="#a78bfa" transform="rotate(-15 385 388)"/>
+  <ellipse cx="455" cy="388" rx="12" ry="20" fill="#a78bfa" transform="rotate(15 455 388)"/>
+  <!-- Eyes — big and looking up at the terminal -->
+  <ellipse cx="403" cy="428" rx="14" ry="16" fill="white"/>
+  <ellipse cx="437" cy="428" rx="14" ry="16" fill="white"/>
+  <circle cx="405" cy="422" r="7" fill="#0f172a"/>
+  <circle cx="439" cy="422" r="7" fill="#0f172a"/>
+  <circle cx="404" cy="420" r="2.5" fill="white"/>
+  <circle cx="438" cy="420" r="2.5" fill="white"/>
+  <!-- Cheeky grin -->
+  <path d="M400 452 Q420 468 440 452" stroke="#0f172a" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <!-- Hands gripping the terminal bottom edge -->
+  <ellipse cx="370" cy="362" rx="10" ry="8" fill="#c4b5fd"/>
+  <ellipse cx="456" cy="362" rx="10" ry="8" fill="#c4b5fd"/>
 </svg>

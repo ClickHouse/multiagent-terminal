@@ -1,16 +1,57 @@
 {
-  "name": "multiagent",
+  "name": "multiagent-terminal",
   "version": "1.0.0",
-  "description": "",
+  "description": "Run multiple Claude Code agents in parallel",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev -- --no-sandbox --force-node-api-uncaught-exceptions-policy=true",
     "build": "electron-vite build",
-    "preview": "electron-vite preview"
+    "preview": "electron-vite preview",
+    "dist": "electron-vite build && electron-builder",
+    "dist:linux": "electron-vite build && electron-builder --linux",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:win": "electron-vite build && electron-builder --win"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["claude", "agent", "terminal", "electron"],
+  "author": {
+    "name": "ClickHouse",
+    "email": "nikita.fomichev@clickhouse.com"
+  },
   "license": "MIT",
+  "build": {
+    "appId": "com.clickhouse.multiagent-terminal",
+    "productName": "multiagent-terminal",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "node_modules/**/*",
+      "!node_modules/**/node_gyp_bins/**"
+    ],
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Development",
+      "icon": "resources/icon.png"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "resources/icon.png"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "ClickHouse",
+      "repo": "multiagent-terminal"
+    }
+  },
   "type": "module",
   "devDependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -22,6 +63,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.4.27",
     "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "postcss": "^8.5.8",
     "react": "^19.2.4",
