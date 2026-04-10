@@ -1,7 +1,7 @@
 // Force X11 on Linux to avoid Wayland/Vulkan incompatibility with Electron.
+// Must be set before any Electron import.
 if (process.platform === 'linux') {
-  const { app } = require('electron')
-  app.commandLine.appendSwitch('ozone-platform', 'x11')
+  process.env['ELECTRON_OZONE_PLATFORM_HINT'] = 'x11'
 }
 
 import { app, BrowserWindow, ipcMain, dialog, shell, Notification } from 'electron'
