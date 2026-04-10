@@ -50,6 +50,10 @@ const api = {
     return () => ipcRenderer.off('settings:changed', h)
   },
 
+  // Session logs
+  listLogs: (agentId: string): Promise<Array<{ name: string; path: string; mtime: number }>> => ipcRenderer.invoke('logs:list', agentId),
+  readLog: (logPath: string): Promise<string> => ipcRenderer.invoke('logs:read', logPath),
+
   // Shell (mini terminal)
   spawnShell: (agentId: string): Promise<void> => ipcRenderer.invoke('shell:spawn', agentId),
   killShell:  (agentId: string): Promise<void> => ipcRenderer.invoke('shell:kill', agentId),

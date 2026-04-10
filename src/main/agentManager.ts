@@ -2,6 +2,7 @@ import * as nodePty from 'node-pty'
 import * as fs from 'fs'
 import { BrowserWindow } from 'electron'
 import { Agent, AgentStatus } from '../shared/types.js'
+import { openLog, writeLog, closeLog } from './terminalLog.js'
 
 /**
  * Agent status state machine:
@@ -93,6 +94,9 @@ export function spawnAgent(
     throw new Error(`Failed to start claude: ${err?.message ?? err}`)
   }
 
+  // Open a session log file for this agent.
+  openLog(agent.id)
+
   // When resuming (--continue), Claude will start generating immediately.
   // Begin in 'thinking' so the output/pipe tracking picks up the activity.
   // Keep userStartedThisCycle=false — the auto-resume isn't user-triggered,
@@ -143,6 +147,9 @@ export function spawnAgent(
     try {
       if (!entry.alive || ptys.get(agent.id) !== entry) return
 
+      // Persist terminal output to disk.
+      writeLog(agent.id, data)
+
       entry.outputBuf += data
       if (entry.outputTimer === null) {
         entry.outputTimer = setTimeout(flushOutput, 16)
@@ -169,6 +176,7 @@ export function spawnAgent(
       if (ptys.get(agent.id) !== entry) return
       clearTimers()
       if (entry.outputTimer) { clearTimeout(entry.outputTimer); flushOutput() }
+      closeLog(agent.id)
       entry.alive = false
       ptys.delete(agent.id)
       send('agent:exited', agent.id)
@@ -188,6 +196,7 @@ export function killAgent(id: string): void {
     if (entry.idleTimer) clearTimeout(entry.idleTimer)
     if (entry.thinkingTimer) clearTimeout(entry.thinkingTimer)
     if (entry.outputTimer) { clearTimeout(entry.outputTimer); entry.outputTimer = null }
+    closeLog(id)
     entry.alive = false
     try { entry.pty.kill() } catch { /* already dead */ }
     ptys.delete(id)

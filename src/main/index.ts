@@ -14,6 +14,7 @@ import { configDir, pipesDir, agentPipePath, ensureStatuslineScript, patchClaude
 import { ensurePipe, startReading, stopReading } from './statusPipe.js'
 import * as agentManager from './agentManager.js'
 import * as shellManager from './shellManager.js'
+import * as terminalLog from './terminalLog.js'
 import { getSettings, saveSettings } from './settings.js'
 import * as fs from 'fs'
 import * as os from 'os'
@@ -378,6 +379,7 @@ ipcMain.handle('agent:remove', async (_e, id: string) => {
   if (!agent) return
   agentManager.killAgent(id)
   stopReading(id)
+  terminalLog.removeAgentLogs(id)
   await removeWorktree(agent.baseRepoPath, agent.worktreePath).catch(() => {})
   agents = agents.filter((a) => a.id !== id)
   saveAgents(toPersistedAgents())
@@ -473,6 +475,8 @@ ipcMain.handle('agent:markSeen', (_e, id: string) => {
 ipcMain.handle('agent:ensureRunning', (_e, id: string) => {
   const agent = agents.find(a => a.id === id)
   if (!agent) return
+  // Don't try to start agents with validation errors (e.g. missing worktree).
+  if (agent.status === 'error' && agent.activity.startsWith('Worktree missing')) return
   if (agentManager.isRunning(id)) return
   const resume = getSettings().resumeOnOpen
   try { startAgent(agent, resume) }
@@ -482,6 +486,13 @@ ipcMain.handle('agent:ensureRunning', (_e, id: string) => {
 ipcMain.handle('agent:restart', async (_e, id: string) => {
   const agent = agents.find((a) => a.id === id)
   if (!agent) return
+  // Re-validate worktree before restart.
+  if (!fs.existsSync(agent.worktreePath)) {
+    agent.status = 'error'
+    agent.activity = `Worktree missing: ${agent.worktreePath}`
+    broadcastAgentsNow()
+    return
+  }
   agentManager.killAgent(id)
   stopReading(id)
   send('terminal:clear', id)
@@ -964,18 +975,44 @@ app.whenReady().then(async () => {
     } catch { /* no git repo in cwd */ }
   }
 
-  // Reconstitute agents, then auto-resume all of them.
-  agents = (st.agents ?? []).map((a) => ({
-    ...a,
-    status: 'stopped' as const,  // lazy: spawn only when agent is opened
-    activity: '',
-    model: '',
-    contextPercent: 0,
-    tokensUsed: 0,
-    contextWindowSize: 0,
-    costUSD: 0,
-    changedFiles: 0, linesAdded: 0, linesRemoved: 0, currentBranch: '', prNumber: null, prRepo: '', prTitle: '', workingStartedAt: null, lastTaskDuration: null, lastFinishedAt: null, lastInputAt: null, unseenResponse: false, userInteracted: false
-  }))
+  // Reconstitute agents, then validate each one's worktree.
+  agents = (st.agents ?? []).map((a) => {
+    let status: 'stopped' | 'error' = 'stopped'
+    let activity = ''
+
+    // Validate worktree path exists on disk.
+    if (!fs.existsSync(a.worktreePath)) {
+      status = 'error'
+      activity = `Worktree missing: ${a.worktreePath}`
+      console.warn(`[startup] agent "${a.name}" worktree missing: ${a.worktreePath}`)
+    }
+
+    return {
+      ...a,
+      status: status as const,
+      activity,
+      model: '',
+      contextPercent: 0,
+      tokensUsed: 0,
+      contextWindowSize: 0,
+      costUSD: 0,
+      changedFiles: 0, linesAdded: 0, linesRemoved: 0, currentBranch: '', prNumber: null, prRepo: '', prTitle: '', workingStartedAt: null, lastTaskDuration: null, lastFinishedAt: null, lastInputAt: null, unseenResponse: false, userInteracted: false
+    }
+  })
+
+  // Clean up orphaned pipe files (pipes with no matching agent).
+  try {
+    const pDir = pipesDir()
+    const agentIds = new Set(agents.map(a => a.id))
+    for (const file of fs.readdirSync(pDir)) {
+      if (!agentIds.has(file)) {
+        try {
+          fs.unlinkSync(path.join(pDir, file))
+          console.log('[startup] removed orphaned pipe:', file)
+        } catch { /* ignore */ }
+      }
+    }
+  } catch { /* pipes dir may not exist yet */ }
 
   createWindow()
 })
@@ -1016,6 +1053,10 @@ ipcMain.on('shell:resize', (_e, agentId: string, cols: number, rows: number) => 
 ipcMain.handle('shell:kill', (_e, agentId: string) => {
   shellManager.killShell(agentId)
 })
+
+// Session log access for renderer.
+ipcMain.handle('logs:list', (_e, agentId: string) => terminalLog.listLogs(agentId))
+ipcMain.handle('logs:read', (_e, logPath: string) => terminalLog.readLog(logPath))
 
 // Kill all PTYs before quitting to prevent Napi::Error on exit.
 app.on('before-quit', () => {

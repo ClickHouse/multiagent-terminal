@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
+import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 
 interface Props { agentId: string; fontSize?: number; scrollSpeed?: number; scrollback?: number; visible?: boolean }
@@ -20,16 +21,132 @@ const THEME = {
   brightCyan:  '#06b6d4', brightWhite: '#ffffff',
 }
 
+function SearchBar({ searchAddon, onClose }: { searchAddon: SearchAddon; onClose: () => void }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [query, setQuery] = useState('')
+  const [resultIndex, setResultIndex] = useState(-1)
+  const [resultCount, setResultCount] = useState(0)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    const dispose = searchAddon.onDidChangeResults((e) => {
+      setResultIndex(e.resultIndex)
+      setResultCount(e.resultCount)
+    })
+    return () => dispose.dispose()
+  }, [searchAddon])
+
+  const searchOpts = { decorations: { activeMatchColorOverviewRuler: '#f59e0b', matchOverviewRuler: '#bfdbfe' } }
+
+  useEffect(() => {
+    if (!query) {
+      searchAddon.clearDecorations()
+      setResultIndex(-1)
+      setResultCount(0)
+      return
+    }
+    searchAddon.findNext(query, searchOpts)
+  }, [query, searchAddon])
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      searchAddon.clearDecorations()
+      onClose()
+    } else if (e.key === 'Enter') {
+      if (e.shiftKey) {
+        searchAddon.findPrevious(query, searchOpts)
+      } else {
+        searchAddon.findNext(query, searchOpts)
+      }
+    }
+  }
+
+  const matchLabel = query
+    ? resultCount === 0
+      ? 'No results'
+      : resultIndex >= 0
+        ? `${resultIndex + 1}/${resultCount}`
+        : `${resultCount}+`
+    : null
+
+  return (
+    <div style={{
+      position: 'absolute', top: 4, right: 16, zIndex: 10,
+      display: 'flex', alignItems: 'center', gap: 4,
+      background: 'var(--surface, #f8fafc)', border: '1px solid var(--border, #e2e8f0)',
+      borderRadius: 6, padding: '4px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+    }}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={e => setQuery(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Search..."
+        style={{
+          width: 180, padding: '3px 6px', fontSize: 12,
+          border: '1px solid var(--border, #e2e8f0)', borderRadius: 4,
+          background: '#fff', color: 'var(--text, #1e293b)',
+          outline: 'none', fontFamily: 'var(--font-mono, monospace)',
+        }}
+      />
+      {matchLabel && (
+        <span style={{
+          fontSize: 11, color: resultCount === 0 ? 'var(--s-error-fg, #dc2626)' : 'var(--text-dim, #94a3b8)',
+          whiteSpace: 'nowrap', minWidth: 32, textAlign: 'center',
+        }}>
+          {matchLabel}
+        </span>
+      )}
+      <button
+        onClick={() => searchAddon.findPrevious(query, searchOpts)}
+        title="Previous match (Shift+Enter)"
+        style={{
+          padding: '2px 6px', fontSize: 12, cursor: 'pointer',
+          border: '1px solid var(--border, #e2e8f0)', borderRadius: 4,
+          background: 'var(--bg, #fff)', color: 'var(--text-secondary, #64748b)',
+        }}
+      >&#x25B2;</button>
+      <button
+        onClick={() => searchAddon.findNext(query, searchOpts)}
+        title="Next match (Enter)"
+        style={{
+          padding: '2px 6px', fontSize: 12, cursor: 'pointer',
+          border: '1px solid var(--border, #e2e8f0)', borderRadius: 4,
+          background: 'var(--bg, #fff)', color: 'var(--text-secondary, #64748b)',
+        }}
+      >&#x25BC;</button>
+      <button
+        onClick={() => { searchAddon.clearDecorations(); onClose() }}
+        title="Close (Esc)"
+        style={{
+          padding: '2px 6px', fontSize: 12, cursor: 'pointer',
+          border: '1px solid var(--border, #e2e8f0)', borderRadius: 4,
+          background: 'var(--bg, #fff)', color: 'var(--text-secondary, #64748b)',
+        }}
+      >&times;</button>
+    </div>
+  )
+}
+
 export default function Terminal({ agentId, fontSize = 13, scrollSpeed = 3, scrollback = 5000, visible = true }: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<XTerm | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
+  const searchRef = useRef<SearchAddon | null>(null)
   const visibleRef = useRef(visible)
   const writeBufferRef = useRef('')
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [showSearch, setShowSearch] = useState(false)
 
   // Keep visibleRef in sync.
   visibleRef.current = visible
+
+  const openSearch = useCallback(() => setShowSearch(true), [])
+  const closeSearch = useCallback(() => {
+    setShowSearch(false)
+    xtermRef.current?.focus()
+  }, [])
 
   // Create xterm once on mount, dispose on unmount.
   useEffect(() => {
@@ -55,6 +172,10 @@ export default function Terminal({ agentId, fontSize = 13, scrollSpeed = 3, scro
     const fit = new FitAddon()
     xterm.loadAddon(fit)
     xterm.loadAddon(new WebLinksAddon((_e, uri) => window.api.openExternal(uri)))
+
+    const search = new SearchAddon()
+    xterm.loadAddon(search)
+    searchRef.current = search
 
     try {
       const webgl = new WebglAddon()
@@ -96,9 +217,15 @@ export default function Terminal({ agentId, fontSize = 13, scrollSpeed = 3, scro
     ta?.addEventListener('paste', pasteHandler as EventListener, { capture: true })
 
     xterm.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      // Ctrl+Shift+C: copy selection
       if (e.ctrlKey && e.shiftKey && e.key === 'C' && e.type === 'keydown') {
         const sel = xterm.getSelection()
         if (sel) window.api.clipboardWrite(sel)
+        return false
+      }
+      // Ctrl+F or Cmd+F: open search bar
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f' && e.type === 'keydown') {
+        openSearch()
         return false
       }
       return true
@@ -167,6 +294,7 @@ export default function Terminal({ agentId, fontSize = 13, scrollSpeed = 3, scro
       xterm.dispose()
       xtermRef.current = null
       fitRef.current = null
+      searchRef.current = null
     }
   }, [agentId])
 
@@ -209,8 +337,12 @@ export default function Terminal({ agentId, fontSize = 13, scrollSpeed = 3, scro
   return (
     <div
       ref={containerRef}
-      style={{ width: '100%', height: '100%', overflow: 'hidden', background: '#ffffff' }}
+      style={{ width: '100%', height: '100%', overflow: 'hidden', background: '#ffffff', position: 'relative' }}
       onClick={() => xtermRef.current?.focus()}
-    />
+    >
+      {showSearch && searchRef.current && (
+        <SearchBar searchAddon={searchRef.current} onClose={closeSearch} />
+      )}
+    </div>
   )
 }
