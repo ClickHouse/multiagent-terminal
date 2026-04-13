@@ -535,6 +535,7 @@ ipcMain.on('terminal:resize', (_e, id: string, cols: number, rows: number) => {
 
 ipcMain.handle('agent:setSelected', (_e, id: string) => {
   selectedAgentId = id
+  agentManager.setSelectedAgent(id)
   saveSelectedAgent(id)
 })
 

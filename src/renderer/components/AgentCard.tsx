@@ -8,6 +8,7 @@ import { squashHome } from '../utils'
 interface Props {
   agent: Agent
   selected: boolean
+  recentlyActive: boolean
   onSelect: () => void
   onClone: () => void
 }
@@ -28,7 +29,7 @@ function formatDuration(s: number): string {
   return `${m}m${rs < 10 ? '0' : ''}${rs}s`
 }
 
-export default function AgentCard({ agent, selected, onSelect, onClone }: Props): JSX.Element {
+export default function AgentCard({ agent, selected, recentlyActive, onSelect, onClone }: Props): JSX.Element {
   const { agents, setAgents, selectAgent } = useAgentsStore()
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -65,34 +66,27 @@ export default function AgentCard({ agent, selected, onSelect, onClone }: Props)
   const isActive = agent.status === 'thinking' || agent.status === 'working'
   const showStatusLabel = agent.status !== 'idle'
 
-  // Recently finished fades
-  const finishedAgo = agent.lastFinishedAt ? Date.now() - agent.lastFinishedAt : Infinity
-
-  // Selected: green overlay fading out over 3s on top of selected-bg
-  const isSelectedDone = selected && agent.status === 'idle' && finishedAgo < 3000
-  const selectedDoneOpacity = isSelectedDone ? Math.max(0, 1 - finishedAgo / 3000) : 0
-
-  // Re-render for active fades and done state
-  const [, tick] = useState(0)
+  // CSS-animated green flash when selected agent finishes (replaces 50ms JS timer)
+  const [showDoneOverlay, setShowDoneOverlay] = useState(false)
+  const prevFinishedRef = useRef(agent.lastFinishedAt)
   useEffect(() => {
-    if (!isSelectedDone && !isFinished) return
-    const t = setInterval(() => tick(n => n + 1), isSelectedDone ? 50 : 1000)
-    return () => clearInterval(t)
-  }, [isSelectedDone, isFinished])
+    if (agent.lastFinishedAt && agent.lastFinishedAt !== prevFinishedRef.current && selected && agent.status === 'idle') {
+      prevFinishedRef.current = agent.lastFinishedAt
+      setShowDoneOverlay(true)
+      const t = setTimeout(() => setShowDoneOverlay(false), 3100)
+      return () => clearTimeout(t)
+    }
+    prevFinishedRef.current = agent.lastFinishedAt
+  }, [agent.lastFinishedAt, selected, agent.status])
 
   // State tint
   const stateTint = isFinished
     ? (hovered ? '#dcfce7' : 'var(--finished-bg)')
     : isActive
     ? (selected ? (hovered ? '#fef0c7' : '#fef5e1') : (hovered ? '#fef5e1' : '#fffaf0'))
-    : isSelectedDone
-    ? `rgba(34, 197, 94, ${selectedDoneOpacity * 0.15})`
     : null
 
-  const cardBg = isSelectedDone && stateTint
-    // Layer green overlay on top of selected-bg
-    ? `linear-gradient(${stateTint}, ${stateTint}), var(--selected-bg)`
-    : selected
+  const cardBg = selected
     ? (stateTint ?? 'var(--selected-bg)')
     : stateTint ?? (hovered ? 'var(--surface-hover)' : 'transparent')
 
@@ -119,10 +113,18 @@ export default function AgentCard({ agent, selected, onSelect, onClone }: Props)
             ? '4px solid var(--accent)'
             : '4px solid transparent',
           background: cardBg,
-          transition: 'none',
+          transition: 'opacity 0.3s',
           boxShadow: selected || hovered ? 'inset 0 0 0 1px var(--accent-border)' : 'none',
+          opacity: (recentlyActive || selected || hovered) ? 1 : 0.45,
         }}
       >
+        {showDoneOverlay && (
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: 'rgba(34, 197, 94, 0.15)',
+            animation: 'fadeOut 3s ease-out forwards',
+          }} />
+        )}
         {/* Row 1: name + badges + status dot */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
           {renaming ? (

@@ -101,3 +101,9 @@ html, body, #root {
 @keyframes statusSpin {
   to { transform: rotate(360deg); }
 }
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+

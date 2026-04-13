@@ -1,15 +1,38 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Settings, Plus } from 'lucide-react'
 import { useAgentsStore } from '../store/agents'
 import AgentCard from './AgentCard'
 import NewAgentDialog from './NewAgentDialog'
 import SettingsPanel from './SettingsPanel'
 
+const RECENT_COUNT = 6
+const NEW_AGENT_MS = 60 * 60 * 1000 // 1 hour
+
 export default function AgentList(): JSX.Element {
   const { agents, selectedId, selectAgent, setAgents } = useAgentsStore()
   const [showNew, setShowNew] = useState(false)
   const [cloneFrom, setCloneFrom] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+
+  // Highlight recently active agents. No dimming when ≤5 total.
+  const recentIds = useMemo(() => {
+    if (agents.length <= RECENT_COUNT) return null // all highlighted
+    const now = Date.now()
+    const activeIds = new Set(
+      agents.filter(a => a.status === 'thinking' || a.status === 'working').map(a => a.id)
+    )
+    const ranked = agents
+      .filter(a => !activeIds.has(a.id))
+      .map(a => {
+        const isNew = now - Date.parse(a.createdAt) < NEW_AGENT_MS
+        return { id: a.id, ts: a.lastInputAt ?? (isNew ? Date.parse(a.createdAt) : 0) }
+      })
+      .filter(a => a.ts > 0)
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, RECENT_COUNT - activeIds.size)
+      .map(a => a.id)
+    return new Set([...activeIds, ...ranked])
+  }, [agents])
 
   // Drag state
   const [dragId, setDragId] = useState<string | null>(null)
@@ -174,6 +197,7 @@ export default function AgentList(): JSX.Element {
                 <AgentCard
                   agent={agent}
                   selected={isSel}
+                  recentlyActive={recentIds === null || recentIds.has(agent.id)}
                   onSelect={() => selectAgent(agent.id)}
                   onClone={() => handleClone(agent.id)}
                 />

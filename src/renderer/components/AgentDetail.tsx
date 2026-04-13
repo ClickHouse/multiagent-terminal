@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Code2, GitCompare, GitPullRequest, RotateCcw, GitBranch, TerminalSquare, GitGraph } from 'lucide-react'
 import { Agent, AgentStatus } from '../../shared/types'
 import { squashHome } from '../utils'
@@ -56,7 +56,6 @@ function IconBtn({ icon, label, onClick, primary, title, disabled }: { icon: Rea
 const BOTTOM_PANEL_H = 220
 
 export default function AgentDetail({ agent, isSelected = true }: Props): JSX.Element {
-  console.log('[AgentDetail] render:', agent?.name, agent?.status, 'selected:', isSelected)
   const sv = STATUS_VARS[agent.status]
   if (!sv) console.error('[AgentDetail] unknown status:', agent?.status)
   const isActive = agent.status !== 'stopped' && agent.status !== 'error'
@@ -66,15 +65,26 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
   const [diffLoading, setDiffLoading] = useState(false)
   const [bottomTab, setBottomTab] = useState<'shell' | 'gitlog' | null>(null)
 
-  // Tick to keep "ago" labels fresh + drive terminal border fade
+  // Tick to keep "ago" labels fresh (30s only — no 50ms fade timer)
   const [, tick] = useState(0)
-  const finishedAgo = agent.lastFinishedAt ? Date.now() - agent.lastFinishedAt : Infinity
-  const terminalFading = agent.status === 'idle' && finishedAgo < 3000
   useEffect(() => {
     if (!isSelected) return
-    const t = setInterval(() => tick(n => n + 1), terminalFading ? 50 : 30000)
+    const t = setInterval(() => tick(n => n + 1), 30000)
     return () => clearInterval(t)
-  }, [isSelected, terminalFading])
+  }, [isSelected])
+
+  // CSS-transition-based border flash when agent finishes
+  const [borderFlash, setBorderFlash] = useState(false)
+  const prevFinishedRef = useRef(agent.lastFinishedAt)
+  useEffect(() => {
+    if (agent.lastFinishedAt && agent.lastFinishedAt !== prevFinishedRef.current && agent.status === 'idle') {
+      prevFinishedRef.current = agent.lastFinishedAt
+      setBorderFlash(true)
+      requestAnimationFrame(() => requestAnimationFrame(() => setBorderFlash(false)))
+    } else {
+      prevFinishedRef.current = agent.lastFinishedAt
+    }
+  }, [agent.lastFinishedAt, agent.status])
 
   // Lazily start the agent PTY when first opened, and clear the unseen badge.
   useEffect(() => {
@@ -113,13 +123,8 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
   }
 
   const isWorking = agent.status === 'thinking' || agent.status === 'working'
-  const doneFade = !isWorking && agent.status === 'idle' && finishedAgo < 3000
-    ? Math.max(0, 1 - finishedAgo / 3000) : 0
-  const stateBorderColor = isWorking
-    ? '#eab308'
-    : doneFade > 0
-    ? `rgba(34, 197, 94, ${doneFade})`
-    : 'transparent'
+  const stateBorderColor = isWorking ? '#eab308' : borderFlash ? '#22c55e' : 'transparent'
+  const borderTransition = borderFlash || isWorking ? 'border-color 0s' : 'border-color 3s ease-out'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -132,6 +137,7 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
         borderLeft: `2px solid ${stateBorderColor}`,
         borderRight: `2px solid ${stateBorderColor}`,
         borderTop: `2px solid ${stateBorderColor}`,
+        transition: borderTransition,
       }}>
         {/* Row 1: Identity + Actions */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -271,6 +277,7 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
         flex: 1, overflow: 'hidden', padding: '8px 8px 0', background: '#ffffff', minHeight: 0,
         borderLeft: `2px solid ${stateBorderColor}`,
         borderRight: `2px solid ${stateBorderColor}`,
+        transition: borderTransition,
       }}>
         <Terminal agentId={agent.id} fontSize={fontSize} scrollSpeed={scrollSpeed} scrollback={scrollback} visible={isSelected} />
       </div>
@@ -279,6 +286,10 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
       <div style={{
         flexShrink: 0, borderTop: '1px solid var(--border)',
         display: 'flex', flexDirection: 'column',
+        borderLeft: `2px solid ${stateBorderColor}`,
+        borderRight: `2px solid ${stateBorderColor}`,
+        borderBottom: `2px solid ${stateBorderColor}`,
+        transition: borderTransition,
       }}>
         {/* Tab bar — always visible at bottom */}
         <div style={{

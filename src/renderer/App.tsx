@@ -46,8 +46,6 @@ export default function App(): JSX.Element {
   const mountedRef = useRef(new Set<string>())
   if (selectedId) mountedRef.current.add(selectedId)
 
-  console.log('[App] render: agents:', agents.length, 'selectedId:', selectedId, 'selected:', selectedAgent?.name ?? 'null', 'loading:', loading)
-
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-dim)', fontSize: 13 }}>

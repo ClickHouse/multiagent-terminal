@@ -39,9 +39,21 @@ type StatusCallback = (id: string, status: AgentStatus, activity: string, sleepD
 const ptys = new Map<string, PtyEntry>()
 const lastSize = new Map<string, { cols: number; rows: number }>()
 let mainWindow: BrowserWindow | null = null
+let selectedAgentId = ''
 
 export function setWindow(win: BrowserWindow): void {
   mainWindow = win
+}
+
+export function setSelectedAgent(id: string): void {
+  selectedAgentId = id
+  // Immediately flush buffered output for the newly-selected agent
+  const entry = ptys.get(id)
+  if (entry?.outputBuf) {
+    if (entry.outputTimer) { clearTimeout(entry.outputTimer); entry.outputTimer = null }
+    send('terminal:output', id, entry.outputBuf)
+    entry.outputBuf = ''
+  }
 }
 
 function send(channel: string, ...args: unknown[]): void {
@@ -152,7 +164,7 @@ export function spawnAgent(
 
       entry.outputBuf += data
       if (entry.outputTimer === null) {
-        entry.outputTimer = setTimeout(flushOutput, 16)
+        entry.outputTimer = setTimeout(flushOutput, agent.id === selectedAgentId ? 16 : 500)
       }
 
       if (entry.currentStatus === 'thinking') {
