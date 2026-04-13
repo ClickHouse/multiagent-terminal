@@ -1,6 +1,6 @@
 {
   "name": "multiagent-terminal",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Run multiple Claude Code agents in parallel",
   "main": "out/main/index.js",
   "scripts": {
