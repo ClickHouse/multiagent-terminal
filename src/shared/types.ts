@@ -70,6 +70,39 @@ export interface AppState {
   baseRepoPath: string
 }
 
+// Stats types (shared between main and renderer)
+export interface StatsBreakdownItem {
+  name: string
+  value: number
+  count: number
+}
+
+export interface DailyStats {
+  date: string
+  cost: number
+  calls: number
+}
+
+export interface StatsResult {
+  summary: {
+    totalCost: number
+    apiCalls: number
+    sessions: number
+    cacheHitRate: number
+    totalInputTokens: number
+    totalOutputTokens: number
+    totalCacheReadTokens: number
+    totalCacheWriteTokens: number
+  }
+  daily: DailyStats[]
+  projects: StatsBreakdownItem[]
+  models: StatsBreakdownItem[]
+  activities: StatsBreakdownItem[]
+  tools: StatsBreakdownItem[]
+}
+
+export type StatsPeriod = 'today' | 'week' | 'month' | 'all'
+
 export interface StatusUpdate {
   model?: string | { id?: string; name?: string; [key: string]: unknown }
   session_id?: string

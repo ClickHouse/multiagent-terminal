@@ -15,6 +15,8 @@ import { ensurePipe, startReading, stopReading } from './statusPipe.js'
 import * as agentManager from './agentManager.js'
 import * as shellManager from './shellManager.js'
 import * as terminalLog from './terminalLog.js'
+import { aggregate, clearStatsCache } from './stats/aggregate.js'
+import { Period } from './stats/types.js'
 import { getSettings, saveSettings } from './settings.js'
 import * as fs from 'fs'
 import * as os from 'os'
@@ -1053,6 +1055,21 @@ ipcMain.on('shell:resize', (_e, agentId: string, cols: number, rows: number) => 
 
 ipcMain.handle('shell:kill', (_e, agentId: string) => {
   shellManager.killShell(agentId)
+})
+
+// Stats
+ipcMain.handle('stats:get', async (_e, period: Period) => {
+  return aggregate(period)
+})
+
+ipcMain.handle('stats:clearCache', () => {
+  clearStatsCache()
+})
+
+ipcMain.handle('stats:agent', async (_e, agentId: string, period: Period) => {
+  const agent = agents.find(a => a.id === agentId)
+  if (!agent) return null
+  return aggregate(period, agent.worktreePath)
 })
 
 // Session log access for renderer.

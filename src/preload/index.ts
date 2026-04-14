@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { Agent, StatusUpdate } from '../shared/types.js'
+import { Agent, StatusUpdate, StatsResult, StatsPeriod } from '../shared/types.js'
 
 const api = {
   // State
@@ -49,6 +49,11 @@ const api = {
     ipcRenderer.on('settings:changed', h)
     return () => ipcRenderer.off('settings:changed', h)
   },
+
+  // Stats
+  getStats: (period: StatsPeriod): Promise<StatsResult> => ipcRenderer.invoke('stats:get', period),
+  getAgentStats: (agentId: string, period: StatsPeriod): Promise<StatsResult | null> => ipcRenderer.invoke('stats:agent', agentId, period),
+  clearStatsCache: (): Promise<void> => ipcRenderer.invoke('stats:clearCache'),
 
   // Session logs
   listLogs: (agentId: string): Promise<Array<{ name: string; path: string; mtime: number }>> => ipcRenderer.invoke('logs:list', agentId),

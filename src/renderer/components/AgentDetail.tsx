@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { Code2, GitCompare, GitPullRequest, RotateCcw, GitBranch, TerminalSquare, GitGraph } from 'lucide-react'
+import { Code2, GitCompare, GitPullRequest, RotateCcw, GitBranch, TerminalSquare, GitGraph, BarChart3 } from 'lucide-react'
 import { Agent, AgentStatus } from '../../shared/types'
 import { squashHome } from '../utils'
 import { useSettings } from '../store/settings'
 import Terminal from './Terminal'
 import ShellTerminal from './ShellTerminal'
 import GitLog from './GitLog'
+import AgentStatsPanel from './stats/AgentStatsPanel'
 
 interface Props { agent: Agent; isSelected?: boolean }
 
@@ -63,7 +64,7 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
   const scrollSpeed = useSettings(s => s.scrollSpeed)
   const scrollback = useSettings(s => s.scrollback)
   const [diffLoading, setDiffLoading] = useState(false)
-  const [bottomTab, setBottomTab] = useState<'shell' | 'gitlog' | null>(null)
+  const [bottomTab, setBottomTab] = useState<'shell' | 'gitlog' | 'stats' | null>(null)
 
   // Tick to keep "ago" labels fresh (30s only — no 50ms fade timer)
   const [, tick] = useState(0)
@@ -118,7 +119,7 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
     }
   }
 
-  const toggleTab = (tab: 'shell' | 'gitlog') => {
+  const toggleTab = (tab: 'shell' | 'gitlog' | 'stats') => {
     setBottomTab(prev => prev === tab ? null : tab)
   }
 
@@ -299,6 +300,7 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
           {([
             { key: 'shell' as const, label: 'Shell', icon: <TerminalSquare size={12} /> },
             { key: 'gitlog' as const, label: 'Git Log', icon: <GitGraph size={12} /> },
+            { key: 'stats' as const, label: 'Stats', icon: <BarChart3 size={12} /> },
           ]).map(tab => {
             const active = bottomTab === tab.key
             return (
@@ -329,6 +331,9 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
             </div>
             <div style={{ display: bottomTab === 'gitlog' ? 'block' : 'none', height: '100%' }}>
               <GitLog agentId={agent.id} visible={isSelected && bottomTab === 'gitlog'} />
+            </div>
+            <div style={{ display: bottomTab === 'stats' ? 'block' : 'none', height: '100%' }}>
+              <AgentStatsPanel agentId={agent.id} visible={isSelected && bottomTab === 'stats'} />
             </div>
           </div>
         )}

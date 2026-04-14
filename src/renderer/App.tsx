@@ -20,6 +20,7 @@ class ErrorBoundary extends Component<{children: ReactNode}, {error: string|null
 }
 import AgentList from './components/AgentList'
 import AgentDetail from './components/AgentDetail'
+import StatsPage from './components/StatsPage'
 import SetupBanner from './components/SetupBanner'
 
 let listenersInited = false
@@ -27,6 +28,7 @@ let listenersInited = false
 export default function App(): JSX.Element {
   const { agents, selectedId, baseRepoPath, setAgents, setBaseRepoPath } = useAgentsStore()
   const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState<'agents' | 'stats'>('agents')
 
   const loadSettings = useSettings(s => s.load)
 
@@ -67,36 +69,54 @@ export default function App(): JSX.Element {
           background: 'linear-gradient(135deg, #ffffff 0%, #fcfcfd 50%, #f8f9fb 100%)',
           overflow: 'hidden',
         }}>
-          <AgentList />
+          <AgentList currentPage={currentPage} onPageChange={setCurrentPage} />
         </div>
 
-        {/* Main panel — all agents stay mounted, only selected is visible */}
+        {/* Main panel */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)', position: 'relative' }}>
-          {agents.filter(a => mountedRef.current.has(a.id)).map(agent => {
-            const sel = agent.id === selectedId
-            return (
-              <div
-                key={agent.id}
-                style={{
-                  position: 'absolute', inset: 0,
-                  visibility: sel ? 'visible' : 'hidden',
-                  zIndex: sel ? 1 : 0,
-                  display: 'flex', flexDirection: 'column',
-                  pointerEvents: sel ? 'auto' : 'none',
-                }}
-              >
-                <ErrorBoundary>
-                  <AgentDetail agent={agent} isSelected={sel} />
-                </ErrorBoundary>
+          {/* Agents view — keep mounted but hidden when on stats page */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            visibility: currentPage === 'agents' ? 'visible' : 'hidden',
+            zIndex: currentPage === 'agents' ? 1 : 0,
+            pointerEvents: currentPage === 'agents' ? 'auto' : 'none',
+            display: 'flex', flexDirection: 'column',
+          }}>
+            {agents.filter(a => mountedRef.current.has(a.id)).map(agent => {
+              const sel = agent.id === selectedId
+              return (
+                <div
+                  key={agent.id}
+                  style={{
+                    position: 'absolute', inset: 0,
+                    visibility: sel ? 'visible' : 'hidden',
+                    zIndex: sel ? 1 : 0,
+                    display: 'flex', flexDirection: 'column',
+                    pointerEvents: sel ? 'auto' : 'none',
+                  }}
+                >
+                  <ErrorBoundary>
+                    <AgentDetail agent={agent} isSelected={sel && currentPage === 'agents'} />
+                  </ErrorBoundary>
+                </div>
+              )
+            })}
+            {!selectedAgent && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 8 }}>
+                <span style={{ fontSize: 32 }}>🤖</span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+                  {agents.length === 0 ? 'Create your first agent to get started.' : 'Select an agent from the sidebar.'}
+                </span>
               </div>
-            )
-          })}
-          {!selectedAgent && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 8 }}>
-              <span style={{ fontSize: 32 }}>🤖</span>
-              <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
-                {agents.length === 0 ? 'Create your first agent to get started.' : 'Select an agent from the sidebar.'}
-              </span>
+            )}
+          </div>
+
+          {/* Stats page */}
+          {currentPage === 'stats' && (
+            <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', flexDirection: 'column' }}>
+              <ErrorBoundary>
+                <StatsPage />
+              </ErrorBoundary>
             </div>
           )}
         </div>

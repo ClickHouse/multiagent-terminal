@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Settings, Plus } from 'lucide-react'
+import { Settings, Plus, BarChart3 } from 'lucide-react'
 import { useAgentsStore } from '../store/agents'
 import AgentCard from './AgentCard'
 import NewAgentDialog from './NewAgentDialog'
@@ -8,7 +8,12 @@ import SettingsPanel from './SettingsPanel'
 const RECENT_COUNT = 6
 const NEW_AGENT_MS = 60 * 60 * 1000 // 1 hour
 
-export default function AgentList(): JSX.Element {
+interface AgentListProps {
+  currentPage: 'agents' | 'stats'
+  onPageChange: (page: 'agents' | 'stats') => void
+}
+
+export default function AgentList({ currentPage, onPageChange }: AgentListProps): JSX.Element {
   const { agents, selectedId, selectAgent, setAgents } = useAgentsStore()
   const [showNew, setShowNew] = useState(false)
   const [cloneFrom, setCloneFrom] = useState<string | null>(null)
@@ -131,18 +136,38 @@ export default function AgentList(): JSX.Element {
         padding: '12px 14px 10px',
         borderBottom: '1px solid var(--border)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-            Agents
-          </span>
-          {agents.length > 0 && (
-            <span style={{
-              fontSize: 11, background: 'var(--surface2)', color: 'var(--text-dim)',
-              borderRadius: 10, padding: '1px 6px', fontWeight: 500,
-            }}>
-              {agents.length}
-            </span>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'var(--surface2)', borderRadius: 'var(--radius)', padding: 2 }}>
+          {([
+            { key: 'agents' as const, label: 'Agents', count: agents.length > 0 ? agents.length : undefined },
+            { key: 'stats' as const, label: 'Stats', icon: <BarChart3 size={11} strokeWidth={2.2} /> },
+          ]).map(tab => {
+            const active = currentPage === tab.key
+            return (
+              <button
+                key={tab.key}
+                onClick={() => onPageChange(tab.key)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                  letterSpacing: '0.04em', textTransform: 'uppercase',
+                  cursor: 'pointer', border: 'none', borderRadius: 4,
+                  background: active ? 'var(--bg)' : 'transparent',
+                  color: active ? 'var(--text)' : 'var(--text-dim)',
+                  boxShadow: active ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                }}
+              >
+                {tab.icon}{tab.label}
+                {tab.count !== undefined && (
+                  <span style={{
+                    fontSize: 10, background: active ? 'var(--surface2)' : 'var(--border)',
+                    color: 'var(--text-dim)', borderRadius: 10, padding: '0px 5px', fontWeight: 500,
+                  }}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
         <button
@@ -198,7 +223,7 @@ export default function AgentList(): JSX.Element {
                   agent={agent}
                   selected={isSel}
                   recentlyActive={recentIds === null || recentIds.has(agent.id)}
-                  onSelect={() => selectAgent(agent.id)}
+                  onSelect={() => { selectAgent(agent.id); onPageChange('agents') }}
                   onClone={() => handleClone(agent.id)}
                 />
               </div>
