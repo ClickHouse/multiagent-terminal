@@ -58,6 +58,7 @@ const api = {
   // Session logs
   listLogs: (agentId: string): Promise<Array<{ name: string; path: string; mtime: number }>> => ipcRenderer.invoke('logs:list', agentId),
   readLog: (logPath: string): Promise<string> => ipcRenderer.invoke('logs:read', logPath),
+  searchLogs: (query: string, agentIds?: string[]): Promise<Array<{ agentId: string; logFile: string; line: string; lineNumber: number; contextBefore: string; contextAfter: string }>> => ipcRenderer.invoke('logs:search', query, agentIds),
 
   // Shell (mini terminal)
   spawnShell: (agentId: string): Promise<void> => ipcRenderer.invoke('shell:spawn', agentId),

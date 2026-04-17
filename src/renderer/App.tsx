@@ -21,6 +21,7 @@ class ErrorBoundary extends Component<{children: ReactNode}, {error: string|null
 import AgentList from './components/AgentList'
 import AgentDetail from './components/AgentDetail'
 import StatsPage from './components/StatsPage'
+import SearchPage from './components/SearchPage'
 import SetupBanner from './components/SetupBanner'
 
 let listenersInited = false
@@ -28,7 +29,7 @@ let listenersInited = false
 export default function App(): JSX.Element {
   const { agents, selectedId, baseRepoPath, setAgents, setBaseRepoPath } = useAgentsStore()
   const [loading, setLoading] = useState(true)
-  const [currentPage, setCurrentPage] = useState<'agents' | 'stats'>('agents')
+  const [currentPage, setCurrentPage] = useState<'agents' | 'stats' | 'search'>('agents')
 
   const loadSettings = useSettings(s => s.load)
 
@@ -40,6 +41,18 @@ export default function App(): JSX.Element {
       setBaseRepoPath(st?.baseRepoPath ?? '')
       setLoading(false)
     }).catch(() => setLoading(false))
+  }, [])
+
+  // Ctrl+Shift+F → open search page
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+        e.preventDefault()
+        setCurrentPage('search')
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
   }, [])
 
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null
@@ -116,6 +129,15 @@ export default function App(): JSX.Element {
             <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', flexDirection: 'column' }}>
               <ErrorBoundary>
                 <StatsPage />
+              </ErrorBoundary>
+            </div>
+          )}
+
+          {/* Search page */}
+          {currentPage === 'search' && (
+            <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', flexDirection: 'column' }}>
+              <ErrorBoundary>
+                <SearchPage onSelectAgent={(id) => { useAgentsStore.getState().selectAgent(id); setCurrentPage('agents') }} />
               </ErrorBoundary>
             </div>
           )}

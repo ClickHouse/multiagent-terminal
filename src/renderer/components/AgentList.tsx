@@ -1,16 +1,21 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Settings, Plus, BarChart3 } from 'lucide-react'
+import { Settings, Plus, BarChart3, Search } from 'lucide-react'
 import { useAgentsStore } from '../store/agents'
 import AgentCard from './AgentCard'
 import NewAgentDialog from './NewAgentDialog'
 import SettingsPanel from './SettingsPanel'
 
-const RECENT_COUNT = 6
-const NEW_AGENT_MS = 60 * 60 * 1000 // 1 hour
+// Opacity decay constants
+const BRIGHT_MIN = 7     // at least this many agents stay at full opacity
+const OPACITY_MAX = 1.0
+const OPACITY_MIN = 0.35
+const DECAY_HALF_LIFE = 30 * 60 * 1000  // 30 min — opacity reaches ~0.67 here
+
+type Page = 'agents' | 'stats' | 'search'
 
 interface AgentListProps {
-  currentPage: 'agents' | 'stats'
-  onPageChange: (page: 'agents' | 'stats') => void
+  currentPage: Page
+  onPageChange: (page: Page) => void
 }
 
 export default function AgentList({ currentPage, onPageChange }: AgentListProps): JSX.Element {
@@ -19,24 +24,47 @@ export default function AgentList({ currentPage, onPageChange }: AgentListProps)
   const [cloneFrom, setCloneFrom] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
 
-  // Highlight recently active agents. No dimming when ≤5 total.
-  const recentIds = useMemo(() => {
-    if (agents.length <= RECENT_COUNT) return null // all highlighted
+  // Per-agent opacity: top BRIGHT_MIN by recency stay at 1.0,
+  // agents needing attention (unseen response, error) stay at 1.0,
+  // the rest decay smoothly from last activity timestamp.
+  const agentOpacity = useMemo(() => {
     const now = Date.now()
-    const activeIds = new Set(
-      agents.filter(a => a.status === 'thinking' || a.status === 'working').map(a => a.id)
-    )
-    const ranked = agents
-      .filter(a => !activeIds.has(a.id))
-      .map(a => {
-        const isNew = now - Date.parse(a.createdAt) < NEW_AGENT_MS
-        return { id: a.id, ts: a.lastInputAt ?? (isNew ? Date.parse(a.createdAt) : 0) }
-      })
-      .filter(a => a.ts > 0)
+    const map = new Map<string, number>()
+
+    // 1. Identify agents that are always full opacity
+    const alwaysBright = new Set<string>()
+    for (const a of agents) {
+      if (a.status === 'thinking' || a.status === 'working' || a.status === 'starting') {
+        alwaysBright.add(a.id)
+      } else if (a.unseenResponse || a.status === 'error') {
+        alwaysBright.add(a.id)
+      }
+    }
+
+    // 2. Rank remaining agents by recency, keep top N bright
+    const remaining = agents
+      .filter(a => !alwaysBright.has(a.id))
+      .map(a => ({
+        id: a.id,
+        ts: a.lastInputAt ?? a.lastFinishedAt ?? Date.parse(a.createdAt),
+      }))
       .sort((a, b) => b.ts - a.ts)
-      .slice(0, RECENT_COUNT - activeIds.size)
-      .map(a => a.id)
-    return new Set([...activeIds, ...ranked])
+
+    const brightSlots = Math.max(0, BRIGHT_MIN - alwaysBright.size)
+    const recentBright = new Set(remaining.slice(0, brightSlots).map(r => r.id))
+
+    // 3. Assign opacities
+    for (const a of agents) {
+      if (alwaysBright.has(a.id) || recentBright.has(a.id)) {
+        map.set(a.id, OPACITY_MAX)
+      } else {
+        const lastActivity = a.lastInputAt ?? a.lastFinishedAt ?? Date.parse(a.createdAt)
+        const elapsed = Math.max(0, now - lastActivity)
+        const decay = Math.pow(2, -elapsed / DECAY_HALF_LIFE)
+        map.set(a.id, Math.round((OPACITY_MIN + (OPACITY_MAX - OPACITY_MIN) * decay) * 100) / 100)
+      }
+    }
+    return map
   }, [agents])
 
   // Drag state
@@ -140,6 +168,7 @@ export default function AgentList({ currentPage, onPageChange }: AgentListProps)
           {([
             { key: 'agents' as const, label: 'Agents', count: agents.length > 0 ? agents.length : undefined },
             { key: 'stats' as const, label: 'Stats', icon: <BarChart3 size={11} strokeWidth={2.2} /> },
+            { key: 'search' as const, label: 'Search', icon: <Search size={11} strokeWidth={2.2} /> },
           ]).map(tab => {
             const active = currentPage === tab.key
             return (
@@ -222,7 +251,7 @@ export default function AgentList({ currentPage, onPageChange }: AgentListProps)
                 <AgentCard
                   agent={agent}
                   selected={isSel}
-                  recentlyActive={recentIds === null || recentIds.has(agent.id)}
+                  dimOpacity={agentOpacity.get(agent.id) ?? OPACITY_MAX}
                   onSelect={() => { selectAgent(agent.id); onPageChange('agents') }}
                   onClone={() => handleClone(agent.id)}
                 />

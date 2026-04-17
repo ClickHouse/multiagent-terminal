@@ -35,7 +35,6 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
   const [baseRepo, setBaseRepo] = useState(() => sourceAgent?.baseRepoPath ?? '')
   const [worktreeDest, setWorktreeDest] = useState('')
   const [createWorktree, setCreateWorktree] = useState(true)
-  const [customDest, setCustomDest] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
@@ -126,7 +125,7 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
                 onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--accent)')}
                 onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
               />
-              <button type="button" onClick={createWorktree ? pickBaseRepo : pickDest}
+              <button type="button" onClick={pickBaseRepo}
                 style={{ flexShrink: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 500, color: 'var(--text-dim)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                 Browse…
               </button>
@@ -145,32 +144,22 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
             </p>
           </div>
 
-          {/* Worktree destination — only when checkbox is on */}
+          {/* Worktree destination — always visible when worktree mode is on */}
           {createWorktree && (
             <div style={{ marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
-                  <input type="checkbox" checked={customDest} onChange={(e) => { setCustomDest(e.target.checked); if (!e.target.checked) setWorktreeDest('') }}
-                    style={{ width: 13, height: 13, accentColor: 'var(--accent)', cursor: 'pointer' }} />
-                  <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)' }}>Custom worktree destination</span>
-                </label>
+              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>
+                Worktree destination
               </div>
-              {customDest ? (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input value={worktreeDest} onChange={(e) => setWorktreeDest(e.target.value)}
-                    placeholder={defaultDest} style={monoStyle}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--accent)')}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')} />
-                  <button type="button" onClick={pickDest}
-                    style={{ flexShrink: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 500, color: 'var(--text-dim)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    Browse…
-                  </button>
-                </div>
-              ) : (
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-dim)', padding: '7px 10px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6 }}>
-                  {defaultDest}
-                </div>
-              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={worktreeDest} onChange={(e) => setWorktreeDest(e.target.value)}
+                  placeholder={defaultDest} style={monoStyle}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')} />
+                <button type="button" onClick={pickDest}
+                  style={{ flexShrink: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 500, color: 'var(--text-dim)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  Browse…
+                </button>
+              </div>
             </div>
           )}
 

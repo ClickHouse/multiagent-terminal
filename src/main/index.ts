@@ -1017,6 +1017,9 @@ app.whenReady().then(async () => {
     }
   } catch { /* pipes dir may not exist yet */ }
 
+  // Start search worker (indexes logs in background thread).
+  terminalLog.initSearchWorker()
+
   createWindow()
 })
 
@@ -1075,9 +1078,13 @@ ipcMain.handle('stats:agent', async (_e, agentId: string, period: Period) => {
 // Session log access for renderer.
 ipcMain.handle('logs:list', (_e, agentId: string) => terminalLog.listLogs(agentId))
 ipcMain.handle('logs:read', (_e, logPath: string) => terminalLog.readLog(logPath))
+ipcMain.handle('logs:search', async (_e, query: string, agentIds?: string[]) => {
+  return terminalLog.searchLogs(query, agentIds)
+})
 
 // Kill all PTYs before quitting to prevent Napi::Error on exit.
 app.on('before-quit', () => {
+  terminalLog.shutdownSearchWorker()
   shellManager.killAll()
   for (const agent of agents) {
     try { agentManager.killAgent(agent.id) } catch { /* ignore */ }

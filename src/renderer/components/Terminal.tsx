@@ -28,7 +28,6 @@ function SearchBar({ searchAddon, onClose }: { searchAddon: SearchAddon; onClose
   const [resultCount, setResultCount] = useState(0)
 
   useEffect(() => {
-    inputRef.current?.focus()
     const dispose = searchAddon.onDidChangeResults((e) => {
       setResultIndex(e.resultIndex)
       setResultCount(e.resultCount)
@@ -70,12 +69,15 @@ function SearchBar({ searchAddon, onClose }: { searchAddon: SearchAddon; onClose
     : null
 
   return (
-    <div style={{
-      position: 'absolute', top: 4, right: 16, zIndex: 10,
-      display: 'flex', alignItems: 'center', gap: 4,
-      background: 'var(--surface, #f8fafc)', border: '1px solid var(--border, #e2e8f0)',
-      borderRadius: 6, padding: '4px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-    }}>
+    <div
+      onClick={e => e.stopPropagation()}
+      style={{
+        position: 'absolute', top: 4, right: 16, zIndex: 10,
+        display: 'flex', alignItems: 'center', gap: 4,
+        background: 'var(--surface, #f8fafc)', border: '1px solid var(--border, #e2e8f0)',
+        borderRadius: 6, padding: '4px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+      }}
+    >
       <input
         ref={inputRef}
         type="text"

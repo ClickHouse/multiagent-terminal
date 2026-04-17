@@ -8,7 +8,7 @@ import { squashHome } from '../utils'
 interface Props {
   agent: Agent
   selected: boolean
-  recentlyActive: boolean
+  dimOpacity: number   // 0.35–1.0, computed by AgentList via time-decay
   onSelect: () => void
   onClone: () => void
 }
@@ -29,7 +29,7 @@ function formatDuration(s: number): string {
   return `${m}m${rs < 10 ? '0' : ''}${rs}s`
 }
 
-export default function AgentCard({ agent, selected, recentlyActive, onSelect, onClone }: Props): JSX.Element {
+export default function AgentCard({ agent, selected, dimOpacity, onSelect, onClone }: Props): JSX.Element {
   const { agents, setAgents, selectAgent } = useAgentsStore()
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -115,7 +115,7 @@ export default function AgentCard({ agent, selected, recentlyActive, onSelect, o
           background: cardBg,
           transition: 'opacity 0.3s',
           boxShadow: selected || hovered ? 'inset 0 0 0 1px var(--accent-border)' : 'none',
-          opacity: (recentlyActive || selected || hovered) ? 1 : 0.45,
+          opacity: (selected || hovered) ? 1 : dimOpacity,
         }}
       >
         {showDoneOverlay && (
