@@ -26,6 +26,9 @@ const trigramIndex = new Map();
 // fileKey → { mtime, lines, linesLower }
 const fileCache = new Map();
 
+// fileKey → mtimeMs at which this file was last indexed (drives lazy refresh).
+const indexedMtime = new Map();
+
 function extractTrigrams(text) {
   const t = new Set();
   const lower = text.toLowerCase();
@@ -43,6 +46,13 @@ function addToIndex(fileKey, text) {
   }
 }
 
+function dropFileKeyFromIndex(fileKey) {
+  for (const [tri, set] of trigramIndex) {
+    set.delete(fileKey);
+    if (set.size === 0) trigramIndex.delete(tri);
+  }
+}
+
 function removeFromIndex(agentId) {
   const prefix = agentId + '/';
   for (const [tri, set] of trigramIndex) {
@@ -53,6 +63,9 @@ function removeFromIndex(agentId) {
   }
   for (const key of fileCache.keys()) {
     if (key.startsWith(prefix)) fileCache.delete(key);
+  }
+  for (const key of indexedMtime.keys()) {
+    if (key.startsWith(prefix)) indexedMtime.delete(key);
   }
 }
 
@@ -76,8 +89,12 @@ function readFileLines(filePath, fileKey) {
   }
 }
 
-function buildIndex() {
-  let fileCount = 0;
+// Scan logsBase and (re)index any file whose mtime is newer than what we
+// previously indexed. Cheap when nothing changed — a directory walk plus
+// a stat per file. Called once at startup and before each search, replacing
+// the old per-chunk 'index' message path.
+function refreshIndex() {
+  let indexed = 0;
   try {
     const agents = fs.readdirSync(logsBase, { withFileTypes: true })
       .filter(e => e.isDirectory());
@@ -93,18 +110,33 @@ function buildIndex() {
       for (const file of files) {
         const filePath = path.join(agentDir, file);
         const fileKey = agent.name + '/' + file;
+        let stat;
+        try { stat = fs.statSync(filePath); } catch { continue; }
+        const prev = indexedMtime.get(fileKey);
+        if (prev === stat.mtimeMs) continue;
+
+        // File grew or changed — drop its old trigrams and the cached line
+        // arrays, then re-index from disk.
+        if (prev !== undefined) {
+          dropFileKeyFromIndex(fileKey);
+          fileCache.delete(fileKey);
+        }
         const entry = readFileLines(filePath, fileKey);
         if (!entry) continue;
-
         for (const line of entry.lines) {
           if (line.length >= 3) addToIndex(fileKey, line);
         }
-        fileCount++;
+        indexedMtime.set(fileKey, stat.mtimeMs);
+        indexed++;
       }
     }
   } catch {}
+  return indexed;
+}
 
-  parentPort.postMessage({ type: 'ready', fileCount, trigramCount: trigramIndex.size });
+function buildIndex() {
+  const indexed = refreshIndex();
+  parentPort.postMessage({ type: 'ready', fileCount: indexed, trigramCount: trigramIndex.size });
 }
 
 function search(query, agentIds, maxResults) {
@@ -176,16 +208,10 @@ function search(query, agentIds, maxResults) {
 parentPort.on('message', (msg) => {
   switch (msg.type) {
     case 'search': {
+      // Lazy-refresh: pick up any file growth since the last search.
+      refreshIndex();
       const results = search(msg.query, msg.agentIds, msg.maxResults || 200);
       parentPort.postMessage({ type: 'searchResult', id: msg.id, results });
-      break;
-    }
-    case 'index': {
-      const fileKey = msg.agentId + '/' + msg.logFile;
-      for (const line of msg.lines) {
-        if (line.length >= 3) addToIndex(fileKey, line);
-      }
-      fileCache.delete(fileKey);
       break;
     }
     case 'remove': {

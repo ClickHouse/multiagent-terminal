@@ -7,6 +7,11 @@ import { SEARCH_WORKER_CODE } from './searchWorker.js'
 
 const activeStreams = new Map<string, fs.WriteStream>()
 const activeLogFiles = new Map<string, string>() // agentId → current log filename
+// Chunks are accumulated in an array and joined on flush — string concat
+// per chunk is O(n²) for bursty output with many small writes.
+const pendingWrites = new Map<string, string[]>() // agentId → unflushed cleaned chunks
+const LOG_FLUSH_MS = 250
+let logFlushInterval: ReturnType<typeof setInterval> | null = null
 
 function logsDir(): string {
   const dir = path.join(configDir(), 'logs')
@@ -25,7 +30,36 @@ function agentLogDir(agentId: string): string {
 const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b[()][A-B012]|\x1b[>=<]|\x1b\[[\?]?[0-9;]*[hlsr]|\r/g
 
 function stripAnsi(data: string): string {
+  // Most plain-text chunks have no ANSI/CR — skip the regex scan entirely.
+  if (data.indexOf('\x1b') < 0 && data.indexOf('\r') < 0) return data
   return data.replace(ANSI_RE, '')
+}
+
+function flushPendingWrite(agentId: string): void {
+  const chunks = pendingWrites.get(agentId)
+  if (!chunks || chunks.length === 0) return
+  const data = chunks.length === 1 ? chunks[0] : chunks.join('')
+  chunks.length = 0
+  const stream = activeStreams.get(agentId)
+  if (stream) stream.write(data)
+}
+
+function flushAllPendingWrites(): void {
+  for (const agentId of pendingWrites.keys()) flushPendingWrite(agentId)
+}
+
+function ensureLogFlushInterval(): void {
+  if (logFlushInterval) return
+  logFlushInterval = setInterval(flushAllPendingWrites, LOG_FLUSH_MS)
+  // Don't keep the event loop alive just for log flushing.
+  if (typeof logFlushInterval.unref === 'function') logFlushInterval.unref()
+}
+
+function stopLogFlushIntervalIfIdle(): void {
+  if (logFlushInterval && activeStreams.size === 0) {
+    clearInterval(logFlushInterval)
+    logFlushInterval = null
+  }
 }
 
 // ── Search worker ──────────────────────────────────────────────────────
@@ -87,36 +121,35 @@ export function openLog(agentId: string): string {
   const stream = fs.createWriteStream(logPath, { flags: 'a', encoding: 'utf8' })
   activeStreams.set(agentId, stream)
   activeLogFiles.set(agentId, fileName)
+  pendingWrites.set(agentId, [])
   stream.write(`--- Session started: ${new Date().toISOString()} ---\n`)
+  ensureLogFlushInterval()
   return logPath
 }
 
 /**
  * Append terminal output to the agent's active log file.
- * Strips ANSI escape codes before writing.
- * Also feeds new lines to the search worker for incremental indexing.
+ * Strips ANSI escape codes and coalesces small writes into one `stream.write`
+ * per LOG_FLUSH_MS window — turns ~150 syscw/s into single digits at the cost
+ * of up to LOG_FLUSH_MS of log latency.
+ *
+ * Live search indexing was intentionally removed: the worker lazy-refreshes
+ * from disk on each search request instead.
  */
 export function writeLog(agentId: string, data: string): void {
-  const stream = activeStreams.get(agentId)
-  if (!stream) return
+  const chunks = pendingWrites.get(agentId)
+  if (!chunks) return
   const clean = stripAnsi(data)
   if (!clean) return
-  stream.write(clean)
-
-  // Feed lines to worker for incremental indexing
-  const logFile = activeLogFiles.get(agentId)
-  if (logFile) {
-    const lines = clean.split('\n').filter(l => l.length >= 3)
-    if (lines.length > 0) {
-      sendToWorker({ type: 'index', agentId, logFile, lines })
-    }
-  }
+  chunks.push(clean)
 }
 
 /**
  * Close the log file for an agent session. Call this when the PTY exits.
  */
 export function closeLog(agentId: string): void {
+  flushPendingWrite(agentId)
+  pendingWrites.delete(agentId)
   const stream = activeStreams.get(agentId)
   if (stream) {
     stream.write(`\n--- Session ended: ${new Date().toISOString()} ---\n`)
@@ -124,6 +157,7 @@ export function closeLog(agentId: string): void {
     activeStreams.delete(agentId)
     activeLogFiles.delete(agentId)
   }
+  stopLogFlushIntervalIfIdle()
 }
 
 /**

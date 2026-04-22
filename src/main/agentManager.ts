@@ -29,7 +29,7 @@ interface PtyEntry {
   thinkingTimer: ReturnType<typeof setTimeout> | null
   outputSinceThinking: number
   outputBuf: string
-  outputTimer: ReturnType<typeof setTimeout> | null
+  lastFlushAt: number
 }
 
 // Callback signature: sleepDetected=true means the transition was caused by
@@ -41,6 +41,41 @@ const lastSize = new Map<string, { cols: number; rows: number }>()
 let mainWindow: BrowserWindow | null = null
 let selectedAgentId = ''
 
+// Single shared flush interval for IPC output. Runs at 16ms (~60 Hz) — the
+// cadence the selected agent needs. Unselected agents are coalesced to 500ms
+// by checking `lastFlushAt`. Started on first spawn, stopped when the last
+// PTY exits, so an idle app doesn't tick at 60 Hz for nothing.
+const IPC_TICK_MS = 16
+const BACKGROUND_FLUSH_MS = 500
+let ipcFlushInterval: ReturnType<typeof setInterval> | null = null
+
+function ipcTick(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return
+  const now = Date.now()
+  for (const [id, entry] of ptys) {
+    if (!entry.alive || !entry.outputBuf) continue
+    const isSelected = id === selectedAgentId
+    if (isSelected || (now - entry.lastFlushAt) >= BACKGROUND_FLUSH_MS) {
+      mainWindow.webContents.send('terminal:output', id, entry.outputBuf)
+      entry.outputBuf = ''
+      entry.lastFlushAt = now
+    }
+  }
+}
+
+function ensureFlushInterval(): void {
+  if (ipcFlushInterval) return
+  ipcFlushInterval = setInterval(ipcTick, IPC_TICK_MS)
+  if (typeof ipcFlushInterval.unref === 'function') ipcFlushInterval.unref()
+}
+
+function stopFlushIntervalIfIdle(): void {
+  if (ipcFlushInterval && ptys.size === 0) {
+    clearInterval(ipcFlushInterval)
+    ipcFlushInterval = null
+  }
+}
+
 export function setWindow(win: BrowserWindow): void {
   mainWindow = win
 }
@@ -50,9 +85,9 @@ export function setSelectedAgent(id: string): void {
   // Immediately flush buffered output for the newly-selected agent
   const entry = ptys.get(id)
   if (entry?.outputBuf) {
-    if (entry.outputTimer) { clearTimeout(entry.outputTimer); entry.outputTimer = null }
     send('terminal:output', id, entry.outputBuf)
     entry.outputBuf = ''
+    entry.lastFlushAt = Date.now()
   }
 }
 
@@ -119,9 +154,10 @@ export function spawnAgent(
     userStartedThisCycle: false,
     idleTimer: null, thinkingTimer: null,
     outputSinceThinking: 0,
-    outputBuf: '', outputTimer: null,
+    outputBuf: '', lastFlushAt: 0,
   }
   ptys.set(agent.id, entry)
+  ensureFlushInterval()
 
   const setStatus = (status: 'idle' | 'thinking' | 'working', sleep = false) => {
     if (entry.currentStatus === status) return
@@ -147,25 +183,15 @@ export function spawnAgent(
     }, IDLE_TIMEOUT)
   }
 
-  const flushOutput = () => {
-    if (entry.outputBuf) {
-      send('terminal:output', agent.id, entry.outputBuf)
-      entry.outputBuf = ''
-    }
-    entry.outputTimer = null
-  }
-
   pty.onData((data) => {
     try {
       if (!entry.alive || ptys.get(agent.id) !== entry) return
 
-      // Persist terminal output to disk.
+      // Persist terminal output to disk (buffered inside terminalLog).
       writeLog(agent.id, data)
 
+      // Buffer for IPC; shared setInterval drains it at the right cadence.
       entry.outputBuf += data
-      if (entry.outputTimer === null) {
-        entry.outputTimer = setTimeout(flushOutput, agent.id === selectedAgentId ? 16 : 500)
-      }
 
       if (entry.currentStatus === 'thinking') {
         entry.outputSinceThinking += data.length
@@ -187,10 +213,14 @@ export function spawnAgent(
     try {
       if (ptys.get(agent.id) !== entry) return
       clearTimers()
-      if (entry.outputTimer) { clearTimeout(entry.outputTimer); flushOutput() }
+      if (entry.outputBuf) {
+        send('terminal:output', agent.id, entry.outputBuf)
+        entry.outputBuf = ''
+      }
       closeLog(agent.id)
       entry.alive = false
       ptys.delete(agent.id)
+      stopFlushIntervalIfIdle()
       send('agent:exited', agent.id)
       onExit?.(agent.id)
       if (exitCode && exitCode !== 0) {
@@ -207,11 +237,12 @@ export function killAgent(id: string): void {
   if (entry) {
     if (entry.idleTimer) clearTimeout(entry.idleTimer)
     if (entry.thinkingTimer) clearTimeout(entry.thinkingTimer)
-    if (entry.outputTimer) { clearTimeout(entry.outputTimer); entry.outputTimer = null }
     closeLog(id)
     entry.alive = false
+    entry.outputBuf = ''
     try { entry.pty.kill() } catch { /* already dead */ }
     ptys.delete(id)
+    stopFlushIntervalIfIdle()
   }
 }
 
