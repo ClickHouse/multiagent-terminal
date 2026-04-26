@@ -91,9 +91,15 @@ async function readOnceUnix(
 
   return new Promise((resolve, reject) => {
     let done = false
+    // Hold a named listener so we can detach it on natural completion.
+    // `{ once: true }` only auto-removes when the event FIRES — for a
+    // long-lived agent the abort never fires, so without explicit removal
+    // each FIFO open/close cycle leaks a closure pinning rl/stream/fd.
+    const onAbort = (): void => finish()
     const finish = (err?: Error) => {
       if (done) return
       done = true
+      signal.removeEventListener('abort', onAbort)
       rl.close()
       stream.destroy()   // autoClose (default) closes the fd
       err ? reject(err) : resolve()
@@ -111,7 +117,7 @@ async function readOnceUnix(
     })
     rl.on('close', () => finish())
     rl.on('error', (e) => finish(e))
-    signal.addEventListener('abort', () => finish(), { once: true })
+    signal.addEventListener('abort', onAbort, { once: true })
   })
 }
 

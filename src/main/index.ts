@@ -435,6 +435,12 @@ ipcMain.handle('agent:reset', async (_e, id: string) => {
     const git = simpleGit(agent.worktreePath)
     const branches = await git.branch()
     const defaultBranch = ['master', 'main'].find(b => branches.all.includes(b)) ?? 'master'
+    agent.activity = `git fetch…`
+    broadcastAgentsNow()
+    try {
+      await git.raw(['fetch', '--no-tags', '--quiet', 'origin', defaultBranch])
+      lastFetchAt.set(agent.worktreePath, Date.now())
+    } catch { /* offline — fall through to checkout + pull */ }
     agent.activity = `git checkout ${defaultBranch}…`
     broadcastAgentsNow()
     await git.checkout(defaultBranch)
@@ -591,7 +597,7 @@ ipcMain.handle('actions:openDiff', async (_e, id: string): Promise<void> => {
   let diffText = ''
   try {
     // Compare branch to base (main/master) — shows all changes since fork point.
-    const mergeBase = await getMergeBase(git)
+    const mergeBase = await getMergeBase(git, agent.worktreePath)
     if (mergeBase) {
       diffText = await git.diff([mergeBase, '--', ':!contrib/'])
     } else {
@@ -816,9 +822,43 @@ else{
   }
 })
 
-/** Find the base branch (main or master) merge-base for diff comparisons. */
-async function getMergeBase(git: ReturnType<typeof simpleGit>): Promise<string | null> {
+// Throttle background fetches per worktree — local origin/main goes stale
+// fast, and a stale base makes merge-base point far behind real main, which
+// inflates diff counts with every commit main has advanced since.
+const FETCH_TTL_MS = 5 * 60 * 1000
+const lastFetchAt = new Map<string, number>()
+const inflightFetch = new Map<string, Promise<void>>()
+
+async function maybeFetchBase(
+  git: ReturnType<typeof simpleGit>,
+  worktreePath: string,
+): Promise<void> {
+  const now = Date.now()
+  const last = lastFetchAt.get(worktreePath) ?? 0
+  if (now - last < FETCH_TTL_MS) return
+  const existing = inflightFetch.get(worktreePath)
+  if (existing) return existing
+  const p = (async () => {
+    try {
+      await git.raw(['fetch', '--no-tags', '--quiet', 'origin', 'main', 'master'])
+    } catch {
+      // Either branch may not exist on the remote — fetch both and ignore.
+      try { await git.raw(['fetch', '--no-tags', '--quiet', 'origin']) } catch { /* ignore */ }
+    } finally {
+      lastFetchAt.set(worktreePath, Date.now())
+      inflightFetch.delete(worktreePath)
+    }
+  })()
+  inflightFetch.set(worktreePath, p)
+  return p
+}
+
+async function getMergeBase(
+  git: ReturnType<typeof simpleGit>,
+  worktreePath?: string,
+): Promise<string | null> {
   try {
+    if (worktreePath) await maybeFetchBase(git, worktreePath)
     const head = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim()
     // Try origin/main, origin/master, then local main/master
     for (const base of ['origin/main', 'origin/master', 'main', 'master']) {
@@ -838,7 +878,7 @@ ipcMain.handle('actions:getChangedFiles', async (_e, id: string): Promise<number
   try {
     const git = simpleGit(agent.worktreePath)
     const branch = (await git.revparse(['--abbrev-ref', 'HEAD']).catch(() => '')).trim()
-    const mergeBase = await getMergeBase(git)
+    const mergeBase = await getMergeBase(git, agent.worktreePath)
 
     let count = 0
     if (mergeBase) {
@@ -872,7 +912,7 @@ ipcMain.handle('actions:getLineStats', async (_e, id: string) => {
   if (!agent) return
   try {
     const git = simpleGit(agent.worktreePath)
-    const mergeBase = await getMergeBase(git)
+    const mergeBase = await getMergeBase(git, agent.worktreePath)
     if (!mergeBase) return
 
     // Sum up shortstat across all commits since merge-base — fast, uses pack data only
