@@ -77,6 +77,16 @@ function broadcastAgentsNow(): void {
   send('agent:list', agents)
 }
 
+function clearAgentMetrics(agent: Agent): void {
+  agent.changedFiles = 0
+  agent.linesAdded = 0
+  agent.linesRemoved = 0
+  agent.currentBranch = ''
+  agent.prNumber = null
+  agent.prRepo = ''
+  agent.prTitle = ''
+}
+
 function onAgentExit(id: string): void {
   const agent = agents.find((a) => a.id === id)
   if (agent) { agent.status = 'stopped'; agent.activity = ''; broadcastAgentsNow() }
@@ -428,6 +438,7 @@ ipcMain.handle('agent:reset', async (_e, id: string) => {
   stopReading(id)
   agent.status = 'stopped'
   agent.activity = 'resetting…'
+  clearAgentMetrics(agent)
   broadcastAgentsNow()
 
   // 2. Git: checkout default branch + pull.
@@ -449,7 +460,6 @@ ipcMain.handle('agent:reset', async (_e, id: string) => {
     await git.pull('origin', defaultBranch, ['--ff-only'])
     agent.branchName = defaultBranch
     agent.currentBranch = defaultBranch
-    agent.changedFiles = 0
   } catch (e: any) {
     console.error(`[reset] git error for ${agent.name}:`, e?.message)
   }
@@ -512,6 +522,7 @@ ipcMain.handle('agent:restart', async (_e, id: string) => {
   agent.lastTaskDuration = null
   agent.unseenResponse = false
   agent.userInteracted = false
+  clearAgentMetrics(agent)
   broadcastAgentsNow()
   // Let the renderer process the clear before spawning new output.
   await new Promise(r => setTimeout(r, 100))
