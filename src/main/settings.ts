@@ -13,7 +13,7 @@ export function getSettings(): AppSettings {
     devTools:     store.get('devTools',     DEFAULT_SETTINGS.devTools),
     resumeOnOpen: store.get('resumeOnOpen', DEFAULT_SETTINGS.resumeOnOpen),
     notifications: store.get('notifications', DEFAULT_SETTINGS.notifications),
-    stripGutter:   store.get('stripGutter',   DEFAULT_SETTINGS.stripGutter),
+    brightAgents:  store.get('brightAgents',  DEFAULT_SETTINGS.brightAgents),
   }
 }
 
@@ -25,6 +25,6 @@ export function saveSettings(s: Partial<AppSettings>): AppSettings {
   if (s.devTools     !== undefined) store.set('devTools',     s.devTools)
   if (s.resumeOnOpen !== undefined) store.set('resumeOnOpen', s.resumeOnOpen)
   if (s.notifications !== undefined) store.set('notifications', s.notifications)
-  if (s.stripGutter  !== undefined) store.set('stripGutter',  s.stripGutter)
+  if (s.brightAgents !== undefined) store.set('brightAgents', s.brightAgents)
   return getSettings()
 }

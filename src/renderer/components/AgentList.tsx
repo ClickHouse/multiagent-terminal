@@ -1,12 +1,12 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Settings, Plus, BarChart3, Search } from 'lucide-react'
 import { useAgentsStore } from '../store/agents'
+import { useSettings } from '../store/settings'
 import AgentCard from './AgentCard'
 import NewAgentDialog from './NewAgentDialog'
 import SettingsPanel from './SettingsPanel'
 
 // Opacity decay constants
-const BRIGHT_MIN = 7     // at least this many agents stay at full opacity
 const OPACITY_MAX = 1.0
 const OPACITY_MIN = 0.35
 const DECAY_HALF_LIFE = 30 * 60 * 1000  // 30 min — opacity reaches ~0.67 here
@@ -20,11 +20,12 @@ interface AgentListProps {
 
 export default function AgentList({ currentPage, onPageChange }: AgentListProps): JSX.Element {
   const { agents, selectedId, selectAgent, setAgents } = useAgentsStore()
+  const brightMin = useSettings(s => s.brightAgents)
   const [showNew, setShowNew] = useState(false)
   const [cloneFrom, setCloneFrom] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
 
-  // Per-agent opacity: top BRIGHT_MIN by recency stay at 1.0,
+  // Per-agent opacity: top brightMin by recency stay at 1.0,
   // agents needing attention (unseen response, error) stay at 1.0,
   // the rest decay smoothly from last activity timestamp.
   const agentOpacity = useMemo(() => {
@@ -50,7 +51,7 @@ export default function AgentList({ currentPage, onPageChange }: AgentListProps)
       }))
       .sort((a, b) => b.ts - a.ts)
 
-    const brightSlots = Math.max(0, BRIGHT_MIN - alwaysBright.size)
+    const brightSlots = Math.max(0, brightMin - alwaysBright.size)
     const recentBright = new Set(remaining.slice(0, brightSlots).map(r => r.id))
 
     // 3. Assign opacities
@@ -65,7 +66,7 @@ export default function AgentList({ currentPage, onPageChange }: AgentListProps)
       }
     }
     return map
-  }, [agents])
+  }, [agents, brightMin])
 
   // Drag state
   const [dragId, setDragId] = useState<string | null>(null)

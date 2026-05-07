@@ -51,7 +51,7 @@ export interface AppSettings {
   devTools: boolean
   resumeOnOpen: boolean  // pass --continue when opening agents (slower but restores context)
   notifications: boolean
-  stripGutter: boolean   // strip Claude Code's 2-column left gutter from terminal output
+  brightAgents: number   // how many recent agents stay at full opacity in the list
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -62,7 +62,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   devTools: false,
   resumeOnOpen: true,
   notifications: false,
-  stripGutter: false,
+  brightAgents: 7,
 }
 
 export interface AppState {

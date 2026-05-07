@@ -5,3 +5,5 @@ dist/
 .DS_Store
 release/
 *.tsbuildinfo
+.claude/scheduled_tasks.lock
+.claude/settings.local.json

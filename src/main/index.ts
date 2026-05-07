@@ -233,7 +233,6 @@ function createWindow(): void {
   })
 
   agentManager.setWindow(mainWindow)
-  agentManager.setStripGutterEnabled(getSettings().stripGutter)
   shellManager.setWindow(mainWindow)
 
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -1090,7 +1089,6 @@ ipcMain.handle('clipboard:read', () => {
 ipcMain.handle('settings:get', () => getSettings())
 ipcMain.handle('settings:save', (_e, patch: any) => {
   const updated = saveSettings(patch)
-  agentManager.setStripGutterEnabled(updated.stripGutter)
   send('settings:changed', updated)
   return updated
 })

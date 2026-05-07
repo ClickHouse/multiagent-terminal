@@ -3,7 +3,7 @@ import { useSettings } from '../store/settings'
 interface Props { onClose: () => void }
 
 export default function SettingsPanel({ onClose }: Props): JSX.Element {
-  const { fontSize, scrollSpeed, scrollback, skipPermissions, devTools, resumeOnOpen, notifications, stripGutter, set } = useSettings()
+  const { fontSize, scrollSpeed, scrollback, skipPermissions, devTools, resumeOnOpen, notifications, brightAgents, set } = useSettings()
 
   return (
     <div
@@ -131,20 +131,22 @@ export default function SettingsPanel({ onClose }: Props): JSX.Element {
             </div>
           </div>
 
-        {/* Strip gutter */}
+        {/* Bright agents */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Strip Claude's left gutter</div>
-              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Remove the 2-column indent from each output line</div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Bright agents</div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>How many recent agents stay at full opacity (older ones fade)</div>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text)', minWidth: 20, textAlign: 'center' }}>
+                {brightAgents}
+              </span>
               <input
-                type="checkbox"
-                checked={stripGutter}
-                onChange={e => set({ stripGutter: e.target.checked })}
-                style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: 'pointer' }}
+                type="range" min={0} max={20} value={brightAgents}
+                onChange={e => set({ brightAgents: Number(e.target.value) })}
+                style={{ width: 80, accentColor: 'var(--accent)' }}
               />
-            </label>
+            </div>
           </div>
 
         {/* Scrollback */}

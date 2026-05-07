@@ -19,11 +19,6 @@ import { openLog, writeLog, closeLog } from './terminalLog.js'
  *   case, transition to idle quietly (no "done" badge, no duration).
  */
 
-interface GutterState {
-  atLineStart: boolean
-  spacesSkipped: number
-}
-
 interface PtyEntry {
   pty: nodePty.IPty
   agentId: string
@@ -35,49 +30,6 @@ interface PtyEntry {
   outputSinceThinking: number
   outputBuf: string
   lastFlushAt: number
-  gutter: GutterState
-}
-
-// Strip up to 2 leading spaces after every newline/CR. Claude Code's TUI
-// hardcodes a 2-column left gutter; this collapses it for the renderer.
-// State is per-PTY so chunk boundaries don't break detection. ANSI/OSC
-// sequences pass through verbatim — but if Claude ever uses cursor-position
-// escapes for the indent instead of literal spaces, those won't be touched.
-let stripGutterEnabled = false
-export function setStripGutterEnabled(enabled: boolean): void {
-  stripGutterEnabled = enabled
-}
-const ANSI_PASSTHROUGH = /^\x1b(?:\[[?]?[0-9;]*[A-Za-z]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[()][A-B012]|[>=<])/
-function stripGutter(data: string, state: GutterState): string {
-  let out = ''
-  let i = 0
-  while (i < data.length) {
-    const ch = data[i]
-    if (ch === '\x1b') {
-      const m = data.slice(i).match(ANSI_PASSTHROUGH)
-      if (m) {
-        out += m[0]
-        i += m[0].length
-        continue
-      }
-    }
-    if (ch === '\n' || ch === '\r') {
-      state.atLineStart = true
-      state.spacesSkipped = 0
-      out += ch
-      i++
-      continue
-    }
-    if (state.atLineStart && ch === ' ' && state.spacesSkipped < 2) {
-      state.spacesSkipped++
-      i++
-      continue
-    }
-    state.atLineStart = false
-    out += ch
-    i++
-  }
-  return out
 }
 
 // Callback signature: sleepDetected=true means the transition was caused by
@@ -203,7 +155,6 @@ export function spawnAgent(
     idleTimer: null, thinkingTimer: null,
     outputSinceThinking: 0,
     outputBuf: '', lastFlushAt: 0,
-    gutter: { atLineStart: true, spacesSkipped: 0 },
   }
   ptys.set(agent.id, entry)
   ensureFlushInterval()
@@ -237,12 +188,10 @@ export function spawnAgent(
       if (!entry.alive || ptys.get(agent.id) !== entry) return
 
       // Persist terminal output to disk (buffered inside terminalLog).
-      // Log keeps raw output as a fallback in case the gutter strip
-      // misaligns Claude's TUI.
       writeLog(agent.id, data)
 
       // Buffer for IPC; shared setInterval drains it at the right cadence.
-      entry.outputBuf += stripGutterEnabled ? stripGutter(data, entry.gutter) : data
+      entry.outputBuf += data
 
       if (entry.currentStatus === 'thinking') {
         entry.outputSinceThinking += data.length
