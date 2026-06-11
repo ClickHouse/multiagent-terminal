@@ -15,6 +15,7 @@ export interface Agent {
   branchName: string
   statusPipePath: string
   createdAt: string
+  launchModel: string    // model id passed to `claude --model`, '' = CLI default
   // Runtime only
   status: AgentStatus
   activity: string       // current activity text (e.g. "Reading 3 files…")
@@ -42,6 +43,21 @@ export type PersistedAgent = Omit<
   Agent,
   'status' | 'activity' | 'model' | 'contextPercent' | 'tokensUsed' | 'contextWindowSize' | 'costUSD' | 'changedFiles' | 'linesAdded' | 'linesRemoved' | 'currentBranch' | 'prNumber' | 'prRepo' | 'prTitle' | 'workingStartedAt' | 'lastTaskDuration' | 'lastFinishedAt' | 'lastInputAt' | 'userInteracted' | 'unseenResponse'
 >
+
+// All currently-served Anthropic models, selectable per agent.
+// id is passed to `claude --model` (and `/model` for running sessions).
+export const CLAUDE_MODELS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: '',                  label: 'Default' },
+  { id: 'claude-fable-5',    label: 'Fable 5' },
+  { id: 'claude-opus-4-8',   label: 'Opus 4.8' },
+  { id: 'claude-opus-4-7',   label: 'Opus 4.7' },
+  { id: 'claude-opus-4-6',   label: 'Opus 4.6' },
+  { id: 'claude-opus-4-5',   label: 'Opus 4.5' },
+  { id: 'claude-opus-4-1',   label: 'Opus 4.1' },
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
+  { id: 'claude-sonnet-4-5', label: 'Sonnet 4.5' },
+  { id: 'claude-haiku-4-5',  label: 'Haiku 4.5' },
+]
 
 export interface AppSettings {
   fontSize: number

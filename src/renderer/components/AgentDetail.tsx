@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Code2, GitCompare, GitPullRequest, RotateCcw, GitBranch, TerminalSquare, GitGraph, BarChart3 } from 'lucide-react'
-import { Agent, AgentStatus } from '../../shared/types'
+import { Agent, AgentStatus, CLAUDE_MODELS } from '../../shared/types'
 import { squashHome } from '../utils'
 import { useSettings } from '../store/settings'
 import Terminal from './Terminal'
@@ -287,15 +287,24 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
                 </span>
               </div>
             )}
-            {agent.model && typeof agent.model === 'string' && (
-              <span style={{
+            <select
+              value={agent.launchModel ?? ''}
+              onChange={(e) => window.api.setAgentModel(agent.id, e.target.value)}
+              title="Model — switches a running session via /model, applies to restarts via --model"
+              style={{
                 color: 'var(--text-secondary)',
-                background: 'var(--surface2)', borderRadius: 4, padding: '2px 7px',
-                border: '1px solid var(--border)',
+                background: 'var(--surface2)', borderRadius: 4, padding: '2px 4px',
+                border: '1px solid var(--border)', fontSize: 'inherit',
+                fontFamily: 'inherit', cursor: 'pointer', outline: 'none',
               }}>
-                {agent.model.replace('claude-', '').replace(/-\d{8}$/, '')}
-              </span>
-            )}
+              {CLAUDE_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.id === '' && agent.model && typeof agent.model === 'string'
+                    ? agent.model.replace('claude-', '').replace(/-\d{8}$/, '')
+                    : m.label}
+                </option>
+              ))}
+            </select>
             {agent.costUSD > 0 && (
               <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>
                 ${agent.costUSD.toFixed(2)}

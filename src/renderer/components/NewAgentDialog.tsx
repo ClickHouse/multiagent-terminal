@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import { Agent } from '../../shared/types'
+import { Agent, CLAUDE_MODELS } from '../../shared/types'
 import { squashHome } from '../utils'
 
 interface Props {
@@ -35,6 +35,7 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
   const [baseRepo, setBaseRepo] = useState(() => sourceAgent?.baseRepoPath ?? '')
   const [worktreeDest, setWorktreeDest] = useState('')
   const [createWorktree, setCreateWorktree] = useState(true)
+  const [model, setModel] = useState(() => sourceAgent?.launchModel ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
@@ -62,6 +63,7 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
         createWorktree ? (baseRepo.trim() || null) : null,  // base repo only for worktree
         createWorktree ? (worktreeDest.trim() || null) : (baseRepo.trim() || null),  // dest or working dir
         createWorktree,
+        model,
       )
       onCreated(agent)
     } catch (err: any) {
@@ -130,6 +132,24 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
                 Browse…
               </button>
             </div>
+          </div>
+
+          {/* Model */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>
+              Model
+              <span style={{ fontWeight: 400, color: 'var(--text-dim)', marginLeft: 6 }}>
+                (Default = your claude CLI setting)
+              </span>
+            </div>
+            <select value={model} onChange={(e) => setModel(e.target.value)}
+              style={{ ...inputStyle, cursor: 'pointer' }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--accent)')}
+              onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}>
+              {CLAUDE_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>{m.label}{m.id ? ` — ${m.id}` : ''}</option>
+              ))}
+            </select>
           </div>
 
           {/* Create git worktree — always in the same position */}

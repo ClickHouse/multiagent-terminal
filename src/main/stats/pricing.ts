@@ -9,6 +9,9 @@ export interface ModelCosts {
 
 // Hardcoded fallback pricing (per token)
 const FALLBACK_PRICING: Record<string, ModelCosts> = {
+  'claude-fable-5':     { inputCostPerToken: 10e-6,  outputCostPerToken: 50e-6,  cacheWriteCostPerToken: 12.5e-6,  cacheReadCostPerToken: 1e-6    },
+  'claude-opus-4-8':    { inputCostPerToken: 5e-6,   outputCostPerToken: 25e-6,  cacheWriteCostPerToken: 6.25e-6,  cacheReadCostPerToken: 0.5e-6  },
+  'claude-opus-4-7':    { inputCostPerToken: 5e-6,   outputCostPerToken: 25e-6,  cacheWriteCostPerToken: 6.25e-6,  cacheReadCostPerToken: 0.5e-6  },
   'claude-opus-4-6':    { inputCostPerToken: 5e-6,   outputCostPerToken: 25e-6,  cacheWriteCostPerToken: 6.25e-6,  cacheReadCostPerToken: 0.5e-6  },
   'claude-opus-4-5':    { inputCostPerToken: 5e-6,   outputCostPerToken: 25e-6,  cacheWriteCostPerToken: 6.25e-6,  cacheReadCostPerToken: 0.5e-6  },
   'claude-opus-4-1':    { inputCostPerToken: 15e-6,  outputCostPerToken: 75e-6,  cacheWriteCostPerToken: 18.75e-6, cacheReadCostPerToken: 1.5e-6  },
@@ -101,6 +104,9 @@ export async function loadPricing(): Promise<void> {
 }
 
 const SHORT_NAMES: Record<string, string> = {
+  'claude-fable-5':    'Fable 5',
+  'claude-opus-4-8':   'Opus 4.8',
+  'claude-opus-4-7':   'Opus 4.7',
   'claude-opus-4-6':   'Opus 4.6',
   'claude-opus-4-5':   'Opus 4.5',
   'claude-opus-4-1':   'Opus 4.1',

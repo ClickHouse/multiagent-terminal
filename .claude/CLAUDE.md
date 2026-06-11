@@ -73,6 +73,7 @@ npm run dist:linux | dist:mac | dist:win    # electron-builder package
 
 ## Key behaviors
 - Agents persist across restarts (state in `~/.config/multiagent/state.json`)
+- Per-agent model: `launchModel` (persisted) is passed as `claude --model <id>`; changing it on a running agent sends `/model <id>` to the session. Model list lives in `CLAUDE_MODELS` (src/shared/types.ts)
 - On restart, agents show as stopped; click Restart → `claude --continue`
 - Context/token/cost bar reads Claude's statusline JSON via named pipe
 - Diff/file/line counts compare against the PR base; `getMergeBase` runs a throttled (5min TTL) `git fetch` per worktree so a stale local `origin/main` doesn't inflate counts

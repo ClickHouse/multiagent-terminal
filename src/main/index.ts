@@ -258,8 +258,8 @@ ipcMain.handle('agent:getState', () => ({
   baseRepoPath
 }))
 
-ipcMain.handle('agent:create', async (_e, name: string, customBase: string | null, customDest: string | null, doWorktree = true) => {
-  console.log('[create] name:', name, '| customBase:', customBase, '| customDest:', customDest, '| doWorktree:', doWorktree)
+ipcMain.handle('agent:create', async (_e, name: string, customBase: string | null, customDest: string | null, doWorktree = true, model = '') => {
+  console.log('[create] name:', name, '| customBase:', customBase, '| customDest:', customDest, '| doWorktree:', doWorktree, '| model:', model || '(default)')
 
   const sanitized = sanitizeName(name)
   const id = uuid()
@@ -325,6 +325,7 @@ ipcMain.handle('agent:create', async (_e, name: string, customBase: string | nul
     branchName,
     statusPipePath: pipePath,
     createdAt: new Date().toISOString(),
+    launchModel: model,
     status: 'starting',
     activity: '', model: '',
     contextPercent: 0, tokensUsed: 0, contextWindowSize: 0, costUSD: 0, changedFiles: 0, linesAdded: 0, linesRemoved: 0, currentBranch: '', prNumber: null, prRepo: '', prTitle: '', workingStartedAt: null, lastTaskDuration: null, lastFinishedAt: null, lastInputAt: null, unseenResponse: false, userInteracted: false
@@ -396,6 +397,19 @@ ipcMain.handle('agent:remove', async (_e, id: string) => {
   agents = agents.filter((a) => a.id !== id)
   saveAgents(toPersistedAgents())
   broadcastAgents()
+})
+
+ipcMain.handle('agent:setModel', (_e, id: string, model: string) => {
+  const agent = agents.find((a) => a.id === id)
+  if (!agent || agent.launchModel === model) return
+  agent.launchModel = model
+  // Switch a running session in place via the /model slash command;
+  // stopped agents pick the model up from --model on next spawn.
+  if (agentManager.isRunning(id)) {
+    agentManager.sendInput(id, `/model ${model || 'default'}\r`)
+  }
+  saveAgents(toPersistedAgents())
+  broadcastAgentsNow()
 })
 
 ipcMain.handle('agent:rename', (_e, id: string, newName: string) => {
@@ -1043,6 +1057,7 @@ app.whenReady().then(async () => {
 
     return {
       ...a,
+      launchModel: a.launchModel ?? '',  // migrate agents persisted before model support
       status: status as const,
       activity,
       model: '',

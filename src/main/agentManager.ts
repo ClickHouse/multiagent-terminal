@@ -120,6 +120,7 @@ export function spawnAgent(
   const args: string[] = []
   if (skipPermissions) args.push('--dangerously-skip-permissions')
   if (resume) args.push('--continue')
+  if (agent.launchModel) args.push('--model', agent.launchModel)
 
   const size = lastSize.get(agent.id) ?? { cols: 120, rows: 40 }
 
