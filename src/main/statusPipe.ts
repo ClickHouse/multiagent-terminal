@@ -110,10 +110,15 @@ async function readOnceUnix(
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity })
     rl.on('line', (line) => {
       if (!line.trim()) return
+      let update: StatusUpdate
       try {
-        const update: StatusUpdate = JSON.parse(line)
+        update = JSON.parse(line)
+      } catch { return /* ignore non-JSON lines */ }
+      try {
         cb(agentId, update)
-      } catch { /* ignore non-JSON lines */ }
+      } catch (e) {
+        console.error(`[statusPipe] callback error for ${agentId}:`, e, '| line:', line.slice(0, 300))
+      }
     })
     rl.on('close', () => finish())
     rl.on('error', (e) => finish(e))
@@ -134,10 +139,15 @@ function startReadingWindows(agentId: string, pipePath: string, cb: StatusCallba
     const rl = readline.createInterface({ input: socket, crlfDelay: Infinity })
     rl.on('line', (line) => {
       if (!line.trim()) return
+      let update: StatusUpdate
       try {
-        const update: StatusUpdate = JSON.parse(line)
+        update = JSON.parse(line)
+      } catch { return /* ignore non-JSON lines */ }
+      try {
         cb(agentId, update)
-      } catch { /* ignore non-JSON lines */ }
+      } catch (e) {
+        console.error(`[statusPipe] callback error for ${agentId}:`, e, '| line:', line.slice(0, 300))
+      }
     })
     socket.on('error', () => {})
   })

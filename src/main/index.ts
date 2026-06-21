@@ -175,9 +175,12 @@ function startAgent_readPipe(agent: Agent): void {
   startReading(agent.id, agent.statusPipePath, (agentId, update) => {
     const a = agents.find(x => x.id === agentId)
     if (!a) return
-    const newPct  = update.context_window.used_percentage
-    const newCost = update.cost.total_cost_usd
-    const newTok  = update.context_window.total_input_tokens
+
+    // Defensive: keep previous values if a field is absent so one missing
+    // key doesn't wipe (or freeze) the rest of the metrics.
+    const newPct  = update.context_window?.used_percentage ?? a.contextPercent
+    const newCost = update.cost?.total_cost_usd ?? a.costUSD
+    const newTok  = update.context_window?.total_input_tokens ?? a.tokensUsed
     let   newModel = a.model
     if (update.model) {
       const m = update.model as any
@@ -187,7 +190,7 @@ function startAgent_readPipe(agent: Agent): void {
         a.tokensUsed !== newTok || a.model !== newModel
     a.contextPercent = newPct
     a.tokensUsed     = newTok
-    a.contextWindowSize = update.context_window.context_window_size
+    a.contextWindowSize = update.context_window?.context_window_size ?? a.contextWindowSize
     a.costUSD        = newCost
     a.model          = newModel
 
@@ -346,40 +349,7 @@ ipcMain.handle('agent:create', async (_e, name: string, customBase: string | nul
 
   agent.status = 'idle'
 
-  startReading(id, pipePath, (agentId, update) => {
-    const a = agents.find((x) => x.id === agentId)
-    if (!a) return
-
-    const newPct    = update.context_window.used_percentage
-    const newTokens = update.context_window.total_input_tokens
-    const newSize   = update.context_window.context_window_size
-    const newCost   = update.cost.total_cost_usd
-    let   newModel  = a.model
-    if (update.model) {
-      if (typeof update.model !== 'string') {
-        console.log('[status] update.model is object:', JSON.stringify(update.model))
-        const m = update.model as any
-        newModel = m.id ?? m.name ?? m.model ?? m.slug ?? JSON.stringify(m)
-      } else {
-        newModel = update.model
-      }
-    }
-
-    const changed = a.contextPercent !== newPct || a.tokensUsed !== newTokens ||
-        a.costUSD !== newCost || a.model !== newModel
-
-    a.contextPercent   = newPct
-    a.tokensUsed       = newTokens
-    a.contextWindowSize = newSize
-    a.costUSD          = newCost
-    a.model            = newModel
-
-    // Statusline fires after each assistant turn — use it as a signal
-    // to transition thinking→working→idle (same as startAgent_readPipe).
-    agentManager.notifyPipeUpdate(agentId, onAgentStatus)
-
-    if (changed) broadcastAgents()
-  })
+  startAgent_readPipe(agent)
 
   saveAgents(toPersistedAgents())
   broadcastAgentsNow()

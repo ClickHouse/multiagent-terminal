@@ -20,10 +20,19 @@ const path = require('path');
 
 const logsBase = workerData.logsDir;
 
+// Memory bounds. Terminal logs capture full Claude sessions verbatim and can
+// reach hundreds of MB each; indexing them whole OOMs the worker (it holds two
+// full copies per file plus a trigram set per line). So: only index a recent
+// tail of each file, cap the total bytes held across all files (newest first),
+// and skip pathologically long lines (data dumps) from the trigram index.
+const MAX_FILE_TAIL_BYTES = 1024 * 1024;     // index only the last 1 MB of a log
+const MAX_TOTAL_INDEX_BYTES = 128 * 1024 * 1024; // hard ceiling across all files
+const MAX_INDEX_LINE_LEN = 2000;             // don't trigram-index longer lines
+
 // trigram → Set of file keys ("agentId/filename")
 const trigramIndex = new Map();
 
-// fileKey → { mtime, lines, linesLower }
+// fileKey → { mtime, lines, bytes }
 const fileCache = new Map();
 
 // fileKey → mtimeMs at which this file was last indexed (drives lazy refresh).
@@ -69,19 +78,33 @@ function removeFromIndex(agentId) {
   }
 }
 
+// Read at most the last MAX_FILE_TAIL_BYTES of a file. For oversized logs we
+// open and read only the tail, then drop the (likely partial) first line.
+function readTail(filePath, size) {
+  if (size <= MAX_FILE_TAIL_BYTES) return fs.readFileSync(filePath, 'utf8');
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(MAX_FILE_TAIL_BYTES);
+    fs.readSync(fd, buf, 0, MAX_FILE_TAIL_BYTES, size - MAX_FILE_TAIL_BYTES);
+    let content = buf.toString('utf8');
+    const nl = content.indexOf('\\n');
+    return nl >= 0 ? content.slice(nl + 1) : content;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function readFileLines(filePath, fileKey) {
   try {
     const stat = fs.statSync(filePath);
     const cached = fileCache.get(fileKey);
     if (cached && cached.mtime === stat.mtimeMs) return cached;
 
-    const content = fs.readFileSync(filePath, 'utf8');
+    const content = readTail(filePath, stat.size);
     const lines = content.split('\\n');
-    const entry = {
-      mtime: stat.mtimeMs,
-      lines,
-      linesLower: lines.map(l => l.toLowerCase()),
-    };
+    // Store one copy only; search lowercases on demand. Track byte cost so the
+    // global budget can evict / skip.
+    const entry = { mtime: stat.mtimeMs, lines, bytes: content.length };
     fileCache.set(fileKey, entry);
     return entry;
   } catch {
@@ -95,10 +118,13 @@ function readFileLines(filePath, fileKey) {
 // the old per-chunk 'index' message path.
 function refreshIndex() {
   let indexed = 0;
+  let skipped = 0;
   try {
+    // Collect every log file with its mtime/size, then process newest first so
+    // the byte budget is spent on the most relevant (recent) output.
+    const all = [];
     const agents = fs.readdirSync(logsBase, { withFileTypes: true })
       .filter(e => e.isDirectory());
-
     for (const agent of agents) {
       const agentDir = path.join(logsBase, agent.name);
       let files;
@@ -106,29 +132,51 @@ function refreshIndex() {
         files = fs.readdirSync(agentDir)
           .filter(f => f.startsWith('session-') && f.endsWith('.log'));
       } catch { continue; }
-
       for (const file of files) {
         const filePath = path.join(agentDir, file);
-        const fileKey = agent.name + '/' + file;
         let stat;
         try { stat = fs.statSync(filePath); } catch { continue; }
-        const prev = indexedMtime.get(fileKey);
-        if (prev === stat.mtimeMs) continue;
-
-        // File grew or changed — drop its old trigrams and the cached line
-        // arrays, then re-index from disk.
-        if (prev !== undefined) {
-          dropFileKeyFromIndex(fileKey);
-          fileCache.delete(fileKey);
-        }
-        const entry = readFileLines(filePath, fileKey);
-        if (!entry) continue;
-        for (const line of entry.lines) {
-          if (line.length >= 3) addToIndex(fileKey, line);
-        }
-        indexedMtime.set(fileKey, stat.mtimeMs);
-        indexed++;
+        all.push({ fileKey: agent.name + '/' + file, filePath, mtime: stat.mtimeMs, size: stat.size });
       }
+    }
+    all.sort((a, b) => b.mtime - a.mtime);
+
+    let totalBytes = 0;
+    for (const f of all) {
+      const prev = indexedMtime.get(f.fileKey);
+
+      // Budget check: each file contributes min(size, tail cap). Once the
+      // ceiling is reached, stop indexing further (older) files entirely.
+      const cost = Math.min(f.size, MAX_FILE_TAIL_BYTES);
+      if (totalBytes + cost > MAX_TOTAL_INDEX_BYTES) {
+        // Evict anything previously indexed beyond the budget so memory drops.
+        if (prev !== undefined) {
+          dropFileKeyFromIndex(f.fileKey);
+          fileCache.delete(f.fileKey);
+          indexedMtime.delete(f.fileKey);
+        }
+        skipped++;
+        continue;
+      }
+      totalBytes += cost;
+
+      if (prev === f.mtime) continue; // unchanged — already indexed
+
+      // File grew or changed — drop its old trigrams + cached lines, re-index.
+      if (prev !== undefined) {
+        dropFileKeyFromIndex(f.fileKey);
+        fileCache.delete(f.fileKey);
+      }
+      const entry = readFileLines(f.filePath, f.fileKey);
+      if (!entry) continue;
+      for (const line of entry.lines) {
+        if (line.length >= 3 && line.length <= MAX_INDEX_LINE_LEN) addToIndex(f.fileKey, line);
+      }
+      indexedMtime.set(f.fileKey, f.mtime);
+      indexed++;
+    }
+    if (skipped > 0) {
+      parentPort.postMessage({ type: 'log', message: 'index budget reached: ' + skipped + ' older log(s) not indexed' });
     }
   } catch {}
   return indexed;

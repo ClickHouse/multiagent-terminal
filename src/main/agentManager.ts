@@ -49,17 +49,18 @@ const IPC_TICK_MS = 16
 const BACKGROUND_FLUSH_MS = 500
 let ipcFlushInterval: ReturnType<typeof setInterval> | null = null
 
+// Only the SELECTED agent streams live. Background agents would otherwise
+// flood the renderer with IPC it can't drain fast enough — the messages pile
+// up in the main process's native IPC queue (JS heap stays flat, RSS climbs
+// unbounded). Their output is still captured to the log file, and a capped
+// tail is buffered in `outputBuf` (see onData) and flushed once on switch.
 function ipcTick(): void {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return
-  const now = Date.now()
-  for (const [id, entry] of ptys) {
-    if (!entry.alive || !entry.outputBuf) continue
-    const isSelected = id === selectedAgentId
-    if (isSelected || (now - entry.lastFlushAt) >= BACKGROUND_FLUSH_MS) {
-      mainWindow.webContents.send('terminal:output', id, entry.outputBuf)
-      entry.outputBuf = ''
-      entry.lastFlushAt = now
-    }
+  const entry = ptys.get(selectedAgentId)
+  if (entry?.alive && entry.outputBuf) {
+    mainWindow.webContents.send('terminal:output', selectedAgentId, entry.outputBuf)
+    entry.outputBuf = ''
+    entry.lastFlushAt = Date.now()
   }
 }
 
@@ -103,6 +104,9 @@ function isSleepWake(scheduledAt: number, expectedMs: number): boolean {
 }
 
 const OUTPUT_THRESHOLD = 200
+// Max bytes retained in a PTY's IPC buffer. Background agents aren't drained
+// by ipcTick, so without this their buffer would grow unbounded in the heap.
+const MAX_OUTPUT_BUF = 256 * 1024
 
 export function spawnAgent(
   agent: Agent,
@@ -192,7 +196,16 @@ export function spawnAgent(
       writeLog(agent.id, data)
 
       // Buffer for IPC; shared setInterval drains it at the right cadence.
+      // Only the selected agent is drained (see ipcTick), so a background
+      // agent's buffer would grow unbounded — cap it to a recent tail,
+      // trimmed at a newline so we don't slice an escape sequence. The
+      // selected agent is drained every 16ms so it never reaches the cap.
       entry.outputBuf += data
+      if (entry.outputBuf.length > MAX_OUTPUT_BUF) {
+        const buf = entry.outputBuf
+        const cut = buf.indexOf('\n', buf.length - MAX_OUTPUT_BUF)
+        entry.outputBuf = buf.slice(cut >= 0 ? cut + 1 : buf.length - MAX_OUTPUT_BUF)
+      }
 
       if (entry.currentStatus === 'thinking') {
         entry.outputSinceThinking += data.length

@@ -84,6 +84,8 @@ export function initSearchWorker(): void {
         }
       } else if (msg.type === 'ready') {
         console.log(`[search] worker ready: ${msg.fileCount} files, ${msg.trigramCount} trigrams`)
+      } else if (msg.type === 'log') {
+        console.log(`[search] ${msg.message}`)
       }
     })
     worker.on('error', (err) => {
