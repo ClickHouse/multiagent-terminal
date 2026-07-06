@@ -41,11 +41,13 @@ const lastSize = new Map<string, { cols: number; rows: number }>()
 let mainWindow: BrowserWindow | null = null
 let selectedAgentId = ''
 
-// Single shared flush interval for IPC output. Runs at 16ms (~60 Hz) — the
-// cadence the selected agent needs. Unselected agents are coalesced to 500ms
-// by checking `lastFlushAt`. Started on first spawn, stopped when the last
-// PTY exits, so an idle app doesn't tick at 60 Hz for nothing.
-const IPC_TICK_MS = 16
+// Single shared flush interval for IPC output. Runs at 33ms (~30 Hz) — the
+// renderer can't repaint xterm faster than its own ~30 Hz flush (Terminal.tsx),
+// so a 60 Hz tick here just doubled main-process sends that the renderer
+// coalesced away. Unselected agents are coalesced to 500ms by checking
+// `lastFlushAt`. Started on first spawn, stopped when the last PTY exits, so an
+// idle app doesn't tick for nothing.
+const IPC_TICK_MS = 33
 const BACKGROUND_FLUSH_MS = 500
 let ipcFlushInterval: ReturnType<typeof setInterval> | null = null
 

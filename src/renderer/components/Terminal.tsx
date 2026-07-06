@@ -159,7 +159,7 @@ export default function Terminal({ agentId, fontSize = 13, scrollSpeed = 3, scro
       fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, monospace',
       fontSize,
       lineHeight: 1.45,
-      cursorBlink: true,
+      cursorBlink: false,
       allowProposedApi: true,
       scrollback,
       padding: 12,
@@ -264,7 +264,7 @@ export default function Terminal({ agentId, fontSize = 13, scrollSpeed = 3, scro
       if (id !== agentId) return
       writeBufferRef.current += data
       if (visibleRef.current && flushTimerRef.current === null) {
-        flushTimerRef.current = setTimeout(flush, 32)
+        flushTimerRef.current = setTimeout(flush, 48)
       }
     })
 
