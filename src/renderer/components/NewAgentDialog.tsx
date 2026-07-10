@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
-import { Agent, CLAUDE_MODELS } from '../../shared/types'
+import { Agent, AgentCli, AGENT_CLIS, CLAUDE_MODELS } from '../../shared/types'
+import { useSettings } from '../store/settings'
 import { squashHome } from '../utils'
 
 interface Props {
@@ -31,10 +32,12 @@ const monoStyle: React.CSSProperties = {
 }
 
 export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Props): JSX.Element {
+  const defaultCli = useSettings(s => s.defaultCli)
   const [name, setName] = useState(() => randomName())
   const [baseRepo, setBaseRepo] = useState(() => sourceAgent?.baseRepoPath ?? '')
   const [worktreeDest, setWorktreeDest] = useState('')
   const [createWorktree, setCreateWorktree] = useState(true)
+  const [cli, setCli] = useState<AgentCli>(() => sourceAgent?.cli ?? defaultCli)
   const [model, setModel] = useState(() => sourceAgent?.launchModel ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -63,7 +66,8 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
         createWorktree ? (baseRepo.trim() || null) : null,  // base repo only for worktree
         createWorktree ? (worktreeDest.trim() || null) : (baseRepo.trim() || null),  // dest or working dir
         createWorktree,
-        model,
+        cli === 'codex' ? '' : model,
+        cli,
       )
       onCreated(agent)
     } catch (err: any) {
@@ -134,23 +138,43 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
             </div>
           </div>
 
-          {/* Model */}
+          {/* CLI */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>
-              Model
+              CLI
               <span style={{ fontWeight: 400, color: 'var(--text-dim)', marginLeft: 6 }}>
-                (Default = your claude CLI setting)
+                (default set in Settings)
               </span>
             </div>
-            <select value={model} onChange={(e) => setModel(e.target.value)}
+            <select value={cli} onChange={(e) => setCli(e.target.value as AgentCli)}
               style={{ ...inputStyle, cursor: 'pointer' }}
               onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--accent)')}
               onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}>
-              {CLAUDE_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>{m.label}{m.id ? ` — ${m.id}` : ''}</option>
+              {AGENT_CLIS.map((c) => (
+                <option key={c.id} value={c.id}>{c.label}</option>
               ))}
             </select>
           </div>
+
+          {/* Model — Claude only */}
+          {cli === 'claude' && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>
+                Model
+                <span style={{ fontWeight: 400, color: 'var(--text-dim)', marginLeft: 6 }}>
+                  (Default = your claude CLI setting)
+                </span>
+              </div>
+              <select value={model} onChange={(e) => setModel(e.target.value)}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}>
+                {CLAUDE_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}{m.id ? ` — ${m.id}` : ''}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Create git worktree — always in the same position */}
           <div style={{ marginBottom: 16 }}>

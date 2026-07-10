@@ -6,9 +6,10 @@ const api = {
   getState: () => ipcRenderer.invoke('agent:getState'),
 
   // Agent CRUD
-  createAgent: (name: string, baseRepo: string | null, dest: string | null, worktree: boolean, model = ''): Promise<Agent> => ipcRenderer.invoke('agent:create', name, baseRepo, dest, worktree, model),
+  createAgent: (name: string, baseRepo: string | null, dest: string | null, worktree: boolean, model = '', cli = ''): Promise<Agent> => ipcRenderer.invoke('agent:create', name, baseRepo, dest, worktree, model, cli),
   removeAgent: (id: string): Promise<void> => ipcRenderer.invoke('agent:remove', id),
   setAgentModel: (id: string, model: string): Promise<void> => ipcRenderer.invoke('agent:setModel', id, model),
+  setAgentCli: (id: string, cli: string): Promise<void> => ipcRenderer.invoke('agent:setCli', id, cli),
   renameAgent: (id: string, name: string): Promise<void> => ipcRenderer.invoke('agent:rename', id, name),
   moveAgent: (id: string, direction: 'up' | 'down'): Promise<void> => ipcRenderer.invoke('agent:move', id, direction),
   reorderAgents: (orderedIds: string[]): Promise<void> => ipcRenderer.invoke('agent:reorder', orderedIds),

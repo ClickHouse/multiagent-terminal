@@ -123,16 +123,23 @@ export function spawnAgent(
     throw new Error(`Working directory does not exist: ${agent.worktreePath}`)
   }
 
+  const cli = agent.cli === 'codex' ? 'codex' : 'claude'
   const args: string[] = []
-  if (skipPermissions) args.push('--dangerously-skip-permissions')
-  if (resume) args.push('--continue')
-  if (agent.launchModel) args.push('--model', agent.launchModel)
+  if (cli === 'codex') {
+    if (resume) args.push('resume', '--last')
+    if (skipPermissions) args.push('--dangerously-bypass-approvals-and-sandbox')
+    // launchModel holds Claude model ids — not passed to codex.
+  } else {
+    if (skipPermissions) args.push('--dangerously-skip-permissions')
+    if (resume) args.push('--continue')
+    if (agent.launchModel) args.push('--model', agent.launchModel)
+  }
 
   const size = lastSize.get(agent.id) ?? { cols: 120, rows: 40 }
 
   let pty: nodePty.IPty
   try {
-    pty = nodePty.spawn('claude', args, {
+    pty = nodePty.spawn(cli, args, {
       name: 'xterm-256color',
       cwd: agent.worktreePath,
       env: {
@@ -145,7 +152,7 @@ export function spawnAgent(
       rows: size.rows,
     })
   } catch (err: any) {
-    throw new Error(`Failed to start claude: ${err?.message ?? err}`)
+    throw new Error(`Failed to start ${cli}: ${err?.message ?? err}`)
   }
 
   // Open a session log file for this agent.

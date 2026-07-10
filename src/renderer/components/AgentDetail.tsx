@@ -213,7 +213,7 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
               primary={!!agent.prNumber}
               disabled={!agent.prNumber && !agent.prRepo}
             />
-            <IconBtn icon={<RotateCcw size={14} />} label="Restart" title="Restart claude (new context)" onClick={() => window.api.restartAgent(agent.id)} />
+            <IconBtn icon={<RotateCcw size={14} />} label="Restart" title="Restart agent (new context)" onClick={() => window.api.restartAgent(agent.id)} />
           </div>
         </div>
 
@@ -287,24 +287,34 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
                 </span>
               </div>
             )}
-            <select
-              value={agent.launchModel ?? ''}
-              onChange={(e) => window.api.setAgentModel(agent.id, e.target.value)}
-              title="Model — switches a running session via /model, applies to restarts via --model"
-              style={{
+            {agent.cli === 'codex' ? (
+              <span title="Runs Codex CLI — switch back via the agent's context menu" style={{
                 color: 'var(--text-secondary)',
-                background: 'var(--surface2)', borderRadius: 4, padding: '2px 4px',
-                border: '1px solid var(--border)', fontSize: 'inherit',
-                fontFamily: 'inherit', cursor: 'pointer', outline: 'none',
+                background: 'var(--surface2)', borderRadius: 4, padding: '2px 6px',
+                border: '1px solid var(--border)', fontWeight: 500,
               }}>
-              {CLAUDE_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id === '' && agent.model && typeof agent.model === 'string'
-                    ? agent.model.replace('claude-', '').replace(/-\d{8}$/, '')
-                    : m.label}
-                </option>
-              ))}
-            </select>
+                codex
+              </span>
+            ) : (
+              <select
+                value={agent.launchModel ?? ''}
+                onChange={(e) => window.api.setAgentModel(agent.id, e.target.value)}
+                title="Model — switches a running session via /model, applies to restarts via --model"
+                style={{
+                  color: 'var(--text-secondary)',
+                  background: 'var(--surface2)', borderRadius: 4, padding: '2px 4px',
+                  border: '1px solid var(--border)', fontSize: 'inherit',
+                  fontFamily: 'inherit', cursor: 'pointer', outline: 'none',
+                }}>
+                {CLAUDE_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.id === '' && agent.model && typeof agent.model === 'string'
+                      ? agent.model.replace('claude-', '').replace(/-\d{8}$/, '')
+                      : m.label}
+                  </option>
+                ))}
+              </select>
+            )}
             {agent.costUSD > 0 && (
               <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>
                 ${agent.costUSD.toFixed(2)}

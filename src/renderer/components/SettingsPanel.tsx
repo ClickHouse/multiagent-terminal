@@ -1,9 +1,10 @@
 import { useSettings } from '../store/settings'
+import { AGENT_CLIS, AgentCli } from '../../shared/types'
 
 interface Props { onClose: () => void }
 
 export default function SettingsPanel({ onClose }: Props): JSX.Element {
-  const { fontSize, scrollSpeed, scrollback, skipPermissions, devTools, resumeOnOpen, notifications, brightAgents, set } = useSettings()
+  const { defaultCli, fontSize, scrollSpeed, scrollback, skipPermissions, devTools, resumeOnOpen, notifications, brightAgents, set } = useSettings()
 
   return (
     <div
@@ -34,6 +35,26 @@ export default function SettingsPanel({ onClose }: Props): JSX.Element {
             General
           </div>
 
+          {/* Default agent CLI */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Default agent CLI</div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Used for new agents — override per agent via its context menu</div>
+            </div>
+            <select
+              value={defaultCli}
+              onChange={e => set({ defaultCli: e.target.value as AgentCli })}
+              style={{
+                background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)', padding: '4px 8px', fontSize: 12,
+                color: 'var(--text)', cursor: 'pointer', outline: 'none',
+              }}>
+              {AGENT_CLIS.map(c => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+
           {/* Notifications */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
@@ -58,8 +79,8 @@ export default function SettingsPanel({ onClose }: Props): JSX.Element {
         {/* Skip permissions */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>--dangerously-skip-permissions</div>
-              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Skip permission prompts in Claude (restart agent to apply)</div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Skip permission prompts</div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Claude: --dangerously-skip-permissions · Codex: --dangerously-bypass-approvals-and-sandbox (restart agent to apply)</div>
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
               <input

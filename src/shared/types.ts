@@ -6,6 +6,13 @@ export type AgentStatus =
   | 'error'      // claude exited with error / crashed
   | 'stopped'    // PTY exited cleanly
 
+export type AgentCli = 'claude' | 'codex'
+
+export const AGENT_CLIS: ReadonlyArray<{ id: AgentCli; label: string; command: string }> = [
+  { id: 'claude', label: 'Claude Code', command: 'claude' },
+  { id: 'codex',  label: 'Codex',       command: 'codex' },
+]
+
 export interface Agent {
   // Persisted
   id: string
@@ -15,7 +22,8 @@ export interface Agent {
   branchName: string
   statusPipePath: string
   createdAt: string
-  launchModel: string    // model id passed to `claude --model`, '' = CLI default
+  cli: AgentCli          // which coding CLI this agent runs
+  launchModel: string    // model id passed to `claude --model`, '' = CLI default (claude only)
   // Runtime only
   status: AgentStatus
   activity: string       // current activity text (e.g. "Reading 3 files…")
@@ -60,6 +68,7 @@ export const CLAUDE_MODELS: ReadonlyArray<{ id: string; label: string }> = [
 ]
 
 export interface AppSettings {
+  defaultCli: AgentCli   // CLI used for new agents (per-agent override on the card)
   fontSize: number
   scrollSpeed: number    // terminal scroll multiplier (1-10)
   scrollback: number     // max lines kept in terminal buffer
@@ -71,6 +80,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  defaultCli: 'claude',
   fontSize: 13,
   scrollSpeed: 3,
   scrollback: 20000,

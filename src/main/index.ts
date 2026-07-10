@@ -7,7 +7,7 @@ if (process.platform === 'linux') {
 import { app, BrowserWindow, ipcMain, dialog, shell, Notification } from 'electron'
 import * as path from 'path'
 import { v4 as uuid } from 'uuid'
-import { Agent, PersistedAgent } from '../shared/types.js'
+import { Agent, AgentCli, PersistedAgent } from '../shared/types.js'
 import { loadState, saveAgents, saveBaseRepo, saveSelectedAgent } from './state.js'
 import { sanitizeName, worktreePath, validateBaseRepo, createWorktree, removeWorktree } from './worktree.js'
 import { configDir, pipesDir, agentPipePath, ensureStatuslineScript, patchClaudeSettings } from './setup.js'
@@ -261,8 +261,9 @@ ipcMain.handle('agent:getState', () => ({
   baseRepoPath
 }))
 
-ipcMain.handle('agent:create', async (_e, name: string, customBase: string | null, customDest: string | null, doWorktree = true, model = '') => {
-  console.log('[create] name:', name, '| customBase:', customBase, '| customDest:', customDest, '| doWorktree:', doWorktree, '| model:', model || '(default)')
+ipcMain.handle('agent:create', async (_e, name: string, customBase: string | null, customDest: string | null, doWorktree = true, model = '', cli: AgentCli | '' = '') => {
+  const agentCli: AgentCli = cli || getSettings().defaultCli
+  console.log('[create] name:', name, '| customBase:', customBase, '| customDest:', customDest, '| doWorktree:', doWorktree, '| model:', model || '(default)', '| cli:', agentCli)
 
   const sanitized = sanitizeName(name)
   const id = uuid()
@@ -328,6 +329,7 @@ ipcMain.handle('agent:create', async (_e, name: string, customBase: string | nul
     branchName,
     statusPipePath: pipePath,
     createdAt: new Date().toISOString(),
+    cli: agentCli,
     launchModel: model,
     status: 'starting',
     activity: '', model: '',
@@ -338,9 +340,9 @@ ipcMain.handle('agent:create', async (_e, name: string, customBase: string | nul
   console.log('[create] agent pushed, total agents:', agents.length)
 
   try {
-    console.log('[create] spawning claude in:', wtPath)
+    console.log(`[create] spawning ${agentCli} in:`, wtPath)
     agentSpawnedAt.set(agent.id, Date.now()); agentLastInputAt.delete(agent.id); agentManager.spawnAgent(agent, false, onAgentExit, onAgentStatus)
-    console.log('[create] claude spawned ok')
+    console.log(`[create] ${agentCli} spawned ok`)
   } catch (e: any) {
     console.log('[create] spawnAgent FAILED:', e?.message)
     agents = agents.filter(a => a.id !== id)
@@ -375,7 +377,8 @@ ipcMain.handle('agent:setModel', (_e, id: string, model: string) => {
   agent.launchModel = model
   // Switch a running session in place via the /model slash command;
   // stopped agents pick the model up from --model on next spawn.
-  if (agentManager.isRunning(id)) {
+  // Codex agents ignore the Claude model list entirely.
+  if (agent.cli !== 'codex' && agentManager.isRunning(id)) {
     agentManager.sendInput(id, `/model ${model || 'default'}\r`)
   }
   saveAgents(toPersistedAgents())
@@ -485,7 +488,7 @@ ipcMain.handle('agent:ensureRunning', (_e, id: string) => {
   catch (e: any) { console.error('[ensureRunning]', e?.message) }
 })
 
-ipcMain.handle('agent:restart', async (_e, id: string) => {
+async function restartAgentSession(id: string): Promise<void> {
   const agent = agents.find((a) => a.id === id)
   if (!agent) return
   // Re-validate worktree before restart.
@@ -512,6 +515,22 @@ ipcMain.handle('agent:restart', async (_e, id: string) => {
   await new Promise(r => setTimeout(r, 100))
   try { startAgent(agent, false) }
   catch (e: any) { agent.status = 'stopped'; broadcastAgentsNow() }
+}
+
+ipcMain.handle('agent:restart', (_e, id: string) => restartAgentSession(id))
+
+ipcMain.handle('agent:setCli', async (_e, id: string, cli: AgentCli) => {
+  const agent = agents.find((a) => a.id === id)
+  if (!agent || agent.cli === cli) return
+  agent.cli = cli
+  agent.model = ''
+  saveAgents(toPersistedAgents())
+  // A running session can't switch CLI in place — restart with the new one.
+  if (agentManager.isRunning(id)) {
+    await restartAgentSession(id)
+  } else {
+    broadcastAgentsNow()
+  }
 })
 
 ipcMain.on('terminal:input', (_e, id: string, data: string) => {
@@ -1027,6 +1046,7 @@ app.whenReady().then(async () => {
 
     return {
       ...a,
+      cli: a.cli ?? 'claude',            // migrate agents persisted before CLI support
       launchModel: a.launchModel ?? '',  // migrate agents persisted before model support
       status: status as const,
       activity,

@@ -6,6 +6,7 @@ const store = new Store<AppSettings>({ name: 'settings', defaults: DEFAULT_SETTI
 
 export function getSettings(): AppSettings {
   return {
+    defaultCli:   store.get('defaultCli',   DEFAULT_SETTINGS.defaultCli),
     fontSize:     store.get('fontSize',     DEFAULT_SETTINGS.fontSize),
     scrollSpeed:  store.get('scrollSpeed',  DEFAULT_SETTINGS.scrollSpeed),
     scrollback:   store.get('scrollback',   DEFAULT_SETTINGS.scrollback),
@@ -18,6 +19,7 @@ export function getSettings(): AppSettings {
 }
 
 export function saveSettings(s: Partial<AppSettings>): AppSettings {
+  if (s.defaultCli   !== undefined) store.set('defaultCli',   s.defaultCli)
   if (s.fontSize     !== undefined) store.set('fontSize',     s.fontSize)
   if (s.scrollSpeed  !== undefined) store.set('scrollSpeed',  s.scrollSpeed)
   if (s.scrollback   !== undefined) store.set('scrollback',   s.scrollback)

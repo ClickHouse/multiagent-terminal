@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Pencil, Copy, ExternalLink, GitCompare, GitPullRequest, RotateCcw, RefreshCcw, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
+import { Pencil, Copy, ExternalLink, GitCompare, GitPullRequest, RotateCcw, RefreshCcw, Trash2, ArrowUp, ArrowDown, ArrowLeftRight } from 'lucide-react'
 import { Agent } from '../../shared/types'
 
 interface Props {
@@ -27,6 +27,14 @@ export default function ContextMenu({ x, y, agent, onClose, onRemove, onRestart,
     { icon: <GitCompare size={13} />,     label: 'View diff',               action: () => { window.api.openDiff(agent.id); onClose() } },
     { icon: <GitPullRequest size={13} />, label: 'Open PR',                 action: () => { window.api.openPR(agent.id); onClose() } },
     null,
+    {
+      icon: <ArrowLeftRight size={13} />,
+      label: agent.cli === 'codex' ? 'Switch to Claude Code' : 'Switch to Codex',
+      action: () => {
+        window.api.setAgentCli(agent.id, agent.cli === 'codex' ? 'claude' : 'codex')
+        onClose()
+      },
+    },
     {
       icon: <RotateCcw size={13} />, label: 'Restart (new context)',
       action: () => { onRestart(); onClose() },

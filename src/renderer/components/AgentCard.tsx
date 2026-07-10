@@ -154,6 +154,16 @@ export default function AgentCard({ agent, selected, dimOpacity, onSelect, onClo
             </span>
           )}
 
+          {agent.cli === 'codex' && (
+            <span title="Runs Codex CLI" style={{
+              fontSize: 10, fontWeight: 600, color: 'var(--text-dim)',
+              border: '1px solid var(--border)', borderRadius: 4,
+              padding: '0 5px', flexShrink: 0,
+            }}>
+              codex
+            </span>
+          )}
+
           {elapsedSec !== null && (
             <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: sv.fg, flexShrink: 0 }}>
               {formatDuration(elapsedSec)}
