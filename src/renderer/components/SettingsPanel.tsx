@@ -4,7 +4,7 @@ import { AGENT_CLIS, AgentCli } from '../../shared/types'
 interface Props { onClose: () => void }
 
 export default function SettingsPanel({ onClose }: Props): JSX.Element {
-  const { defaultCli, fontSize, scrollSpeed, scrollback, skipPermissions, devTools, resumeOnOpen, notifications, brightAgents, set } = useSettings()
+  const { defaultCli, fontSize, scrollSpeed, scrollback, skipPermissions, devTools, resumeOnOpen, notifications, brightAgents, reduceRedraws, set } = useSettings()
 
   return (
     <div
@@ -87,6 +87,22 @@ export default function SettingsPanel({ onClose }: Props): JSX.Element {
                 type="checkbox"
                 checked={skipPermissions}
                 onChange={e => set({ skipPermissions: e.target.checked })}
+                style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: 'pointer' }}
+              />
+            </label>
+          </div>
+
+        {/* Reduce redraws */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Reduce Claude redraws</div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Disable recap and spinner-tip lines — fewer full-screen repaints, fewer duplicated lines (restart agent to apply)</div>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={reduceRedraws}
+                onChange={e => set({ reduceRedraws: e.target.checked })}
                 style={{ width: 14, height: 14, accentColor: 'var(--accent)', cursor: 'pointer' }}
               />
             </label>

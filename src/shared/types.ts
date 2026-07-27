@@ -77,6 +77,7 @@ export interface AppSettings {
   resumeOnOpen: boolean  // pass --continue when opening agents (slower but restores context)
   notifications: boolean
   brightAgents: number   // how many recent agents stay at full opacity in the list
+  reduceRedraws: boolean // disable Claude's recap/spinner-tip chrome lines — each chrome height change triggers a full-viewport repaint that can duplicate lines in scrollback
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -89,6 +90,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeOnOpen: true,
   notifications: false,
   brightAgents: 7,
+  reduceRedraws: true,
 }
 
 export interface AppState {

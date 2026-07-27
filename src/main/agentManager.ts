@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import { BrowserWindow } from 'electron'
 import { Agent, AgentStatus } from '../shared/types.js'
 import { openLog, writeLog, closeLog } from './terminalLog.js'
+import { getSettings } from './settings.js'
 
 /**
  * Agent status state machine:
@@ -29,6 +30,7 @@ interface PtyEntry {
   thinkingTimer: ReturnType<typeof setTimeout> | null
   outputSinceThinking: number
   outputBuf: string
+  outputBufTrimmed: boolean  // buffer head was cut mid-TUI-frame (see MAX_OUTPUT_BUF)
   lastFlushAt: number
 }
 
@@ -56,13 +58,24 @@ let ipcFlushInterval: ReturnType<typeof setInterval> | null = null
 // up in the main process's native IPC queue (JS heap stays flat, RSS climbs
 // unbounded). Their output is still captured to the log file, and a capped
 // tail is buffered in `outputBuf` (see onData) and flushed once on switch.
+// Drain a PTY's IPC buffer. If the buffer head was trimmed (MAX_OUTPUT_BUF),
+// the tail starts mid-frame of Claude's TUI stream — its relative cursor moves
+// would compose with whatever is on screen and interleave two frames. Prefix a
+// clear-screen+home so the replay paints from blank; the tail always ends with
+// a complete frame, so the terminal lands in the correct current state.
+function takeOutputBuf(entry: PtyEntry): string {
+  const data = entry.outputBufTrimmed ? '\x1b[2J\x1b[H' + entry.outputBuf : entry.outputBuf
+  entry.outputBuf = ''
+  entry.outputBufTrimmed = false
+  entry.lastFlushAt = Date.now()
+  return data
+}
+
 function ipcTick(): void {
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return
   const entry = ptys.get(selectedAgentId)
   if (entry?.alive && entry.outputBuf) {
-    mainWindow.webContents.send('terminal:output', selectedAgentId, entry.outputBuf)
-    entry.outputBuf = ''
-    entry.lastFlushAt = Date.now()
+    mainWindow.webContents.send('terminal:output', selectedAgentId, takeOutputBuf(entry))
   }
 }
 
@@ -88,9 +101,7 @@ export function setSelectedAgent(id: string): void {
   // Immediately flush buffered output for the newly-selected agent
   const entry = ptys.get(id)
   if (entry?.outputBuf) {
-    send('terminal:output', id, entry.outputBuf)
-    entry.outputBuf = ''
-    entry.lastFlushAt = Date.now()
+    send('terminal:output', id, takeOutputBuf(entry))
   }
 }
 
@@ -133,6 +144,13 @@ export function spawnAgent(
     if (skipPermissions) args.push('--dangerously-skip-permissions')
     if (resume) args.push('--continue')
     if (agent.launchModel) args.push('--model', agent.launchModel)
+    if (getSettings().reduceRedraws) {
+      // Recap and spinner-tip lines change the height of Claude's bottom
+      // chrome after a response; each height change triggers a full-viewport
+      // repaint, and when the last message is taller than the viewport every
+      // repaint leaks a duplicate of the viewport-top line into scrollback.
+      args.push('--settings', JSON.stringify({ awaySummaryEnabled: false, spinnerTipsEnabled: false }))
+    }
   }
 
   const size = lastSize.get(agent.id) ?? { cols: 120, rows: 40 }
@@ -168,7 +186,7 @@ export function spawnAgent(
     userStartedThisCycle: false,
     idleTimer: null, thinkingTimer: null,
     outputSinceThinking: 0,
-    outputBuf: '', lastFlushAt: 0,
+    outputBuf: '', outputBufTrimmed: false, lastFlushAt: 0,
   }
   ptys.set(agent.id, entry)
   ensureFlushInterval()
@@ -214,6 +232,7 @@ export function spawnAgent(
         const buf = entry.outputBuf
         const cut = buf.indexOf('\n', buf.length - MAX_OUTPUT_BUF)
         entry.outputBuf = buf.slice(cut >= 0 ? cut + 1 : buf.length - MAX_OUTPUT_BUF)
+        entry.outputBufTrimmed = true  // takeOutputBuf clears the screen before replaying this tail
       }
 
       if (entry.currentStatus === 'thinking') {
@@ -237,8 +256,7 @@ export function spawnAgent(
       if (ptys.get(agent.id) !== entry) return
       clearTimers()
       if (entry.outputBuf) {
-        send('terminal:output', agent.id, entry.outputBuf)
-        entry.outputBuf = ''
+        send('terminal:output', agent.id, takeOutputBuf(entry))
       }
       closeLog(agent.id)
       entry.alive = false

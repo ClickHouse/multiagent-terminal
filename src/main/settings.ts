@@ -15,6 +15,7 @@ export function getSettings(): AppSettings {
     resumeOnOpen: store.get('resumeOnOpen', DEFAULT_SETTINGS.resumeOnOpen),
     notifications: store.get('notifications', DEFAULT_SETTINGS.notifications),
     brightAgents:  store.get('brightAgents',  DEFAULT_SETTINGS.brightAgents),
+    reduceRedraws: store.get('reduceRedraws', DEFAULT_SETTINGS.reduceRedraws),
   }
 }
 
@@ -28,5 +29,6 @@ export function saveSettings(s: Partial<AppSettings>): AppSettings {
   if (s.resumeOnOpen !== undefined) store.set('resumeOnOpen', s.resumeOnOpen)
   if (s.notifications !== undefined) store.set('notifications', s.notifications)
   if (s.brightAgents !== undefined) store.set('brightAgents', s.brightAgents)
+  if (s.reduceRedraws !== undefined) store.set('reduceRedraws', s.reduceRedraws)
   return getSettings()
 }

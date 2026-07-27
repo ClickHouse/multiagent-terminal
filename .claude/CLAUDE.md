@@ -81,5 +81,7 @@ npm run dist:linux | dist:mac | dist:win    # electron-builder package
 - Reset (checkout default + pull) and Restart (chat reset) both clear transient metrics — counts repopulate on the next 10s poll
 - Terminal log writes are coalesced into one `fs.write` per 250ms window using a chunk array (avoids O(n²) string concat)
 - Shared 16ms PTY flush tick drains output for the selected agent; background agents coalesced to 500ms
+- `reduceRedraws` setting (default on) spawns claude with `--settings '{"awaySummaryEnabled":false,"spinnerTipsEnabled":false}'` — those chrome lines trigger full-viewport repaints that duplicate scrollback lines when the last message is taller than the viewport
+- Background agents' IPC buffer is capped at 256KB; when trimmed, the flush prefixes `ESC[2J ESC[H` so the mid-frame tail repaints from a blank screen instead of interleaving with stale content
 - Optional setting strips Claude's hardcoded 2-column left gutter from terminal output (off by default; only the rendered output is stripped, log files keep raw bytes)
 - Theme is light: white bg `#ffffff`, slate fg `#1e293b`, JetBrains Mono / Fira Code
