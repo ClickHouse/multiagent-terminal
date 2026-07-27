@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import { Agent, AgentCli, AGENT_CLIS, CLAUDE_MODELS } from '../../shared/types'
+import { Agent, AgentCli, AGENT_CLIS, CLAUDE_MODELS, OPENCODE_MODEL_SUGGESTIONS } from '../../shared/types'
 import { useSettings } from '../store/settings'
 import { squashHome } from '../utils'
 
@@ -39,6 +39,7 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
   const [createWorktree, setCreateWorktree] = useState(true)
   const [cli, setCli] = useState<AgentCli>(() => sourceAgent?.cli ?? defaultCli)
   const [model, setModel] = useState(() => sourceAgent?.launchModel ?? '')
+  const [opencodeConfig, setOpencodeConfig] = useState(() => sourceAgent?.opencodeConfig ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
@@ -55,6 +56,11 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
     if (chosen) setWorktreeDest(chosen)
   }
 
+  const pickOpencodeConfig = async () => {
+    const chosen = await window.api.pickFile()
+    if (chosen) setOpencodeConfig(chosen)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const trimmedName = name.trim()
@@ -66,8 +72,9 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
         createWorktree ? (baseRepo.trim() || null) : null,  // base repo only for worktree
         createWorktree ? (worktreeDest.trim() || null) : (baseRepo.trim() || null),  // dest or working dir
         createWorktree,
-        cli === 'codex' ? '' : model,
+        cli === 'codex' ? '' : model.trim(),
         cli,
+        cli === 'opencode' ? opencodeConfig.trim() : '',
       )
       onCreated(agent)
     } catch (err: any) {
@@ -146,7 +153,12 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
                 (default set in Settings)
               </span>
             </div>
-            <select value={cli} onChange={(e) => setCli(e.target.value as AgentCli)}
+            <select value={cli}
+              onChange={(e) => {
+                // Model formats differ per CLI (claude id vs provider/model), so don't carry it over.
+                setCli(e.target.value as AgentCli)
+                setModel('')
+              }}
               style={{ ...inputStyle, cursor: 'pointer' }}
               onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--accent)')}
               onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}>
@@ -174,6 +186,46 @@ export default function NewAgentDialog({ onClose, onCreated, sourceAgent }: Prop
                 ))}
               </select>
             </div>
+          )}
+
+          {/* Model + config — opencode only */}
+          {cli === 'opencode' && (
+            <>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>
+                  Model
+                  <span style={{ fontWeight: 400, color: 'var(--text-dim)', marginLeft: 6 }}>
+                    (provider/model, empty = opencode default)
+                  </span>
+                </div>
+                <input value={model} onChange={(e) => setModel(e.target.value)}
+                  list="opencode-model-suggestions" placeholder="anthropic/claude-sonnet-4-6"
+                  spellCheck={false} style={monoStyle}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')} />
+                <datalist id="opencode-model-suggestions">
+                  {OPENCODE_MODEL_SUGGESTIONS.map((m) => <option key={m} value={m} />)}
+                </datalist>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>
+                  Config file
+                  <span style={{ fontWeight: 400, color: 'var(--text-dim)', marginLeft: 6 }}>
+                    (OPENCODE_CONFIG, empty = default resolution)
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={opencodeConfig} onChange={(e) => setOpencodeConfig(e.target.value)}
+                    placeholder="~/.config/opencode/opencode.json" spellCheck={false} style={monoStyle}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--border)')} />
+                  <button type="button" onClick={pickOpencodeConfig}
+                    style={{ flexShrink: 0, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 14px', fontSize: 12, fontWeight: 500, color: 'var(--text-dim)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    Browse…
+                  </button>
+                </div>
+              </div>
+            </>
           )}
 
           {/* Create git worktree — always in the same position */}

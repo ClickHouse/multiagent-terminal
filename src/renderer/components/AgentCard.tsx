@@ -154,13 +154,13 @@ export default function AgentCard({ agent, selected, dimOpacity, onSelect, onClo
             </span>
           )}
 
-          {agent.cli === 'codex' && (
-            <span title="Runs Codex CLI" style={{
+          {agent.cli !== 'claude' && (
+            <span title={`Runs ${agent.cli} CLI`} style={{
               fontSize: 10, fontWeight: 600, color: 'var(--text-dim)',
               border: '1px solid var(--border)', borderRadius: 4,
               padding: '0 5px', flexShrink: 0,
             }}>
-              codex
+              {agent.cli}
             </span>
           )}
 

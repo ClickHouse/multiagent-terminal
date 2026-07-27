@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Code2, GitCompare, GitPullRequest, RotateCcw, GitBranch, TerminalSquare, GitGraph, BarChart3 } from 'lucide-react'
-import { Agent, AgentStatus, CLAUDE_MODELS } from '../../shared/types'
+import { Agent, AgentStatus, CLAUDE_MODELS, OPENCODE_MODEL_SUGGESTIONS } from '../../shared/types'
 import { squashHome } from '../utils'
 import { useSettings } from '../store/settings'
 import Terminal from './Terminal'
@@ -51,6 +51,31 @@ function IconBtn({ icon, label, onClick, primary, title, disabled }: { icon: Rea
     >
       {icon}{label}
     </button>
+  )
+}
+
+// Small header input that keeps a local draft and commits on Enter/blur,
+// used for the opencode model and config path (both apply on restart).
+function CommitInput({ value, placeholder, title, width, listId, onCommit }: {
+  value: string; placeholder: string; title: string; width: number; listId?: string
+  onCommit: (v: string) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+  const commit = () => { if (draft.trim() !== value) onCommit(draft.trim()) }
+  return (
+    <input
+      value={draft} placeholder={placeholder} title={title} list={listId} spellCheck={false}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+      style={{
+        width, color: 'var(--text-secondary)',
+        background: 'var(--surface2)', borderRadius: 4, padding: '2px 6px',
+        border: '1px solid var(--border)', fontSize: 'inherit',
+        fontFamily: 'var(--font-mono)', outline: 'none',
+      }}
+    />
   )
 }
 
@@ -287,13 +312,31 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
                 </span>
               </div>
             )}
-            {agent.cli === 'codex' ? (
-              <span title="Runs Codex CLI — switch back via the agent's context menu" style={{
+            {agent.cli === 'opencode' ? (
+              <>
+                <CommitInput
+                  value={agent.launchModel ?? ''} width={170}
+                  placeholder="provider/model" listId="opencode-models-detail"
+                  title="opencode model (provider/model), applies on restart"
+                  onCommit={v => window.api.setAgentModel(agent.id, v)}
+                />
+                <CommitInput
+                  value={agent.opencodeConfig ?? ''} width={190}
+                  placeholder="opencode.json (default)"
+                  title="Config file passed as OPENCODE_CONFIG, applies on restart"
+                  onCommit={v => window.api.setAgentOpencodeConfig(agent.id, v)}
+                />
+                <datalist id="opencode-models-detail">
+                  {OPENCODE_MODEL_SUGGESTIONS.map(m => <option key={m} value={m} />)}
+                </datalist>
+              </>
+            ) : agent.cli !== 'claude' ? (
+              <span title={`Runs ${agent.cli} CLI, switch back via the agent's context menu`} style={{
                 color: 'var(--text-secondary)',
                 background: 'var(--surface2)', borderRadius: 4, padding: '2px 6px',
                 border: '1px solid var(--border)', fontWeight: 500,
               }}>
-                codex
+                {agent.cli}
               </span>
             ) : (
               <select

@@ -6,11 +6,12 @@ export type AgentStatus =
   | 'error'      // claude exited with error / crashed
   | 'stopped'    // PTY exited cleanly
 
-export type AgentCli = 'claude' | 'codex'
+export type AgentCli = 'claude' | 'codex' | 'opencode'
 
 export const AGENT_CLIS: ReadonlyArray<{ id: AgentCli; label: string; command: string }> = [
-  { id: 'claude', label: 'Claude Code', command: 'claude' },
-  { id: 'codex',  label: 'Codex',       command: 'codex' },
+  { id: 'claude',   label: 'Claude Code', command: 'claude' },
+  { id: 'codex',    label: 'Codex',       command: 'codex' },
+  { id: 'opencode', label: 'opencode',    command: 'opencode' },
 ]
 
 export interface Agent {
@@ -23,7 +24,8 @@ export interface Agent {
   statusPipePath: string
   createdAt: string
   cli: AgentCli          // which coding CLI this agent runs
-  launchModel: string    // model id passed to `claude --model`, '' = CLI default (claude only)
+  launchModel: string    // claude: model id for --model; opencode: provider/model for --model; '' = CLI default; codex ignores
+  opencodeConfig: string // opencode only: config file path passed via OPENCODE_CONFIG env, '' = opencode's own config resolution
   // Runtime only
   status: AgentStatus
   activity: string       // current activity text (e.g. "Reading 3 files…")
@@ -57,6 +59,7 @@ export type PersistedAgent = Omit<
 export const CLAUDE_MODELS: ReadonlyArray<{ id: string; label: string }> = [
   { id: '',                  label: 'Default' },
   { id: 'claude-fable-5',    label: 'Fable 5' },
+  { id: 'claude-opus-5',     label: 'Opus 5' },
   { id: 'claude-opus-4-8',   label: 'Opus 4.8' },
   { id: 'claude-opus-4-7',   label: 'Opus 4.7' },
   { id: 'claude-opus-4-6',   label: 'Opus 4.6' },
@@ -65,6 +68,18 @@ export const CLAUDE_MODELS: ReadonlyArray<{ id: string; label: string }> = [
   { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
   { id: 'claude-sonnet-4-5', label: 'Sonnet 4.5' },
   { id: 'claude-haiku-4-5',  label: 'Haiku 4.5' },
+]
+
+// Datalist suggestions for the opencode model field. Free text rules:
+// any provider/model string opencode's auth knows about is valid.
+export const OPENCODE_MODEL_SUGGESTIONS: ReadonlyArray<string> = [
+  'anthropic/claude-fable-5',
+  'anthropic/claude-opus-5',
+  'anthropic/claude-sonnet-4-6',
+  'anthropic/claude-haiku-4-5',
+  'openai/gpt-5.1-codex',
+  'google/gemini-3-pro-preview',
+  'openrouter/qwen/qwen3-coder',
 ]
 
 export interface AppSettings {

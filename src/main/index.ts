@@ -261,9 +261,9 @@ ipcMain.handle('agent:getState', () => ({
   baseRepoPath
 }))
 
-ipcMain.handle('agent:create', async (_e, name: string, customBase: string | null, customDest: string | null, doWorktree = true, model = '', cli: AgentCli | '' = '') => {
+ipcMain.handle('agent:create', async (_e, name: string, customBase: string | null, customDest: string | null, doWorktree = true, model = '', cli: AgentCli | '' = '', opencodeConfig = '') => {
   const agentCli: AgentCli = cli || getSettings().defaultCli
-  console.log('[create] name:', name, '| customBase:', customBase, '| customDest:', customDest, '| doWorktree:', doWorktree, '| model:', model || '(default)', '| cli:', agentCli)
+  console.log('[create] name:', name, '| customBase:', customBase, '| customDest:', customDest, '| doWorktree:', doWorktree, '| model:', model || '(default)', '| cli:', agentCli, '| opencodeConfig:', opencodeConfig || '(none)')
 
   const sanitized = sanitizeName(name)
   const id = uuid()
@@ -331,6 +331,7 @@ ipcMain.handle('agent:create', async (_e, name: string, customBase: string | nul
     createdAt: new Date().toISOString(),
     cli: agentCli,
     launchModel: model,
+    opencodeConfig: agentCli === 'opencode' && opencodeConfig ? expandHome(opencodeConfig) : '',
     status: 'starting',
     activity: '', model: '',
     contextPercent: 0, tokensUsed: 0, contextWindowSize: 0, costUSD: 0, changedFiles: 0, linesAdded: 0, linesRemoved: 0, currentBranch: '', prNumber: null, prRepo: '', prTitle: '', workingStartedAt: null, lastTaskDuration: null, lastFinishedAt: null, lastInputAt: null, unseenResponse: false, userInteracted: false
@@ -375,10 +376,10 @@ ipcMain.handle('agent:setModel', (_e, id: string, model: string) => {
   const agent = agents.find((a) => a.id === id)
   if (!agent || agent.launchModel === model) return
   agent.launchModel = model
-  // Switch a running session in place via the /model slash command;
-  // stopped agents pick the model up from --model on next spawn.
-  // Codex agents ignore the Claude model list entirely.
-  if (agent.cli !== 'codex' && agentManager.isRunning(id)) {
+  // Switch a running Claude session in place via the /model slash command.
+  // Stopped agents pick the model up from --model on next spawn; opencode
+  // (provider/model string) applies on restart only, codex ignores it.
+  if (agent.cli === 'claude' && agentManager.isRunning(id)) {
     agentManager.sendInput(id, `/model ${model || 'default'}\r`)
   }
   saveAgents(toPersistedAgents())
@@ -522,6 +523,9 @@ ipcMain.handle('agent:restart', (_e, id: string) => restartAgentSession(id))
 ipcMain.handle('agent:setCli', async (_e, id: string, cli: AgentCli) => {
   const agent = agents.find((a) => a.id === id)
   if (!agent || agent.cli === cli) return
+  // launchModel formats are CLI-specific (claude model id vs opencode's
+  // provider/model), so drop it when opencode is on either side of the switch.
+  if (cli === 'opencode' || agent.cli === 'opencode') agent.launchModel = ''
   agent.cli = cli
   agent.model = ''
   saveAgents(toPersistedAgents())
@@ -531,6 +535,18 @@ ipcMain.handle('agent:setCli', async (_e, id: string, cli: AgentCli) => {
   } else {
     broadcastAgentsNow()
   }
+})
+
+ipcMain.handle('agent:setOpencodeConfig', (_e, id: string, configPath: string) => {
+  const agent = agents.find((a) => a.id === id)
+  if (!agent) return
+  // Expand ~ since the value goes into OPENCODE_CONFIG env verbatim.
+  const expanded = configPath.startsWith('~') ? path.join(os.homedir(), configPath.slice(1)) : configPath
+  if (agent.opencodeConfig === expanded) return
+  agent.opencodeConfig = expanded
+  // Passed as OPENCODE_CONFIG env at spawn, so it applies on next restart.
+  saveAgents(toPersistedAgents())
+  broadcastAgentsNow()
 })
 
 ipcMain.on('terminal:input', (_e, id: string, data: string) => {
@@ -572,6 +588,17 @@ ipcMain.handle('agent:pickDirectory', async () => {
     properties: ['openDirectory', 'createDirectory', 'promptToCreate'],
     title: 'Select working directory',
     defaultPath: os.homedir(),
+  })
+  if (result.canceled || !result.filePaths.length) return null
+  return result.filePaths[0]
+})
+
+ipcMain.handle('agent:pickFile', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openFile'],
+    title: 'Select opencode config',
+    defaultPath: os.homedir(),
+    filters: [{ name: 'JSON', extensions: ['json', 'jsonc'] }, { name: 'All files', extensions: ['*'] }],
   })
   if (result.canceled || !result.filePaths.length) return null
   return result.filePaths[0]
@@ -1048,6 +1075,7 @@ app.whenReady().then(async () => {
       ...a,
       cli: a.cli ?? 'claude',            // migrate agents persisted before CLI support
       launchModel: a.launchModel ?? '',  // migrate agents persisted before model support
+      opencodeConfig: a.opencodeConfig ?? '',  // migrate agents persisted before opencode config support
       status: status as const,
       activity,
       model: '',

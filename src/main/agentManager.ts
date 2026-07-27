@@ -134,12 +134,18 @@ export function spawnAgent(
     throw new Error(`Working directory does not exist: ${agent.worktreePath}`)
   }
 
-  const cli = agent.cli === 'codex' ? 'codex' : 'claude'
+  const cli = agent.cli === 'codex' || agent.cli === 'opencode' ? agent.cli : 'claude'
   const args: string[] = []
   if (cli === 'codex') {
     if (resume) args.push('resume', '--last')
     if (skipPermissions) args.push('--dangerously-bypass-approvals-and-sandbox')
     // launchModel holds Claude model ids — not passed to codex.
+  } else if (cli === 'opencode') {
+    if (resume) args.push('--continue')
+    // launchModel holds a provider/model string here (e.g. anthropic/claude-sonnet-4-6).
+    if (agent.launchModel) args.push('--model', agent.launchModel)
+    // No permission-bypass flag: opencode's tool permissions live in its
+    // config and default to allow.
   } else {
     if (skipPermissions) args.push('--dangerously-skip-permissions')
     if (resume) args.push('--continue')
@@ -163,6 +169,8 @@ export function spawnAgent(
       env: {
         ...process.env,
         MULTIAGENT_STATUS_PIPE: agent.statusPipePath,
+        // Per-agent opencode config (providers, MCP servers, permissions).
+        ...(cli === 'opencode' && agent.opencodeConfig ? { OPENCODE_CONFIG: agent.opencodeConfig } : {}),
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor'
       } as Record<string, string>,

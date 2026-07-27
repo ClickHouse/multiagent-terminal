@@ -80,7 +80,7 @@ export default function SettingsPanel({ onClose }: Props): JSX.Element {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Skip permission prompts</div>
-              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Claude: --dangerously-skip-permissions · Codex: --dangerously-bypass-approvals-and-sandbox (restart agent to apply)</div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>Claude: --dangerously-skip-permissions · Codex: --dangerously-bypass-approvals-and-sandbox · opencode: no flag, configure permissions in opencode.json (restart agent to apply)</div>
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
               <input

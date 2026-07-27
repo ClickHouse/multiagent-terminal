@@ -6,10 +6,11 @@ const api = {
   getState: () => ipcRenderer.invoke('agent:getState'),
 
   // Agent CRUD
-  createAgent: (name: string, baseRepo: string | null, dest: string | null, worktree: boolean, model = '', cli = ''): Promise<Agent> => ipcRenderer.invoke('agent:create', name, baseRepo, dest, worktree, model, cli),
+  createAgent: (name: string, baseRepo: string | null, dest: string | null, worktree: boolean, model = '', cli = '', opencodeConfig = ''): Promise<Agent> => ipcRenderer.invoke('agent:create', name, baseRepo, dest, worktree, model, cli, opencodeConfig),
   removeAgent: (id: string): Promise<void> => ipcRenderer.invoke('agent:remove', id),
   setAgentModel: (id: string, model: string): Promise<void> => ipcRenderer.invoke('agent:setModel', id, model),
   setAgentCli: (id: string, cli: string): Promise<void> => ipcRenderer.invoke('agent:setCli', id, cli),
+  setAgentOpencodeConfig: (id: string, configPath: string): Promise<void> => ipcRenderer.invoke('agent:setOpencodeConfig', id, configPath),
   renameAgent: (id: string, name: string): Promise<void> => ipcRenderer.invoke('agent:rename', id, name),
   moveAgent: (id: string, direction: 'up' | 'down'): Promise<void> => ipcRenderer.invoke('agent:move', id, direction),
   reorderAgents: (orderedIds: string[]): Promise<void> => ipcRenderer.invoke('agent:reorder', orderedIds),
@@ -21,6 +22,7 @@ const api = {
   setBaseRepo: (path: string): Promise<void> => ipcRenderer.invoke('agent:setBaseRepo', path),
   pickBaseRepo: (): Promise<string | null> => ipcRenderer.invoke('agent:pickBaseRepo'),
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('agent:pickDirectory'),
+  pickFile: (): Promise<string | null> => ipcRenderer.invoke('agent:pickFile'),
 
   // Terminal I/O
   sendInput: (id: string, data: string): void => ipcRenderer.send('terminal:input', id, data),
