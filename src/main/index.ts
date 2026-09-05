@@ -442,12 +442,26 @@ ipcMain.handle('agent:reset', async (_e, id: string) => {
     } catch { /* offline — fall through to checkout + pull */ }
     agent.activity = `git checkout ${defaultBranch}…`
     broadcastAgentsNow()
-    await git.checkout(defaultBranch)
-    agent.activity = `git pull…`
-    broadcastAgentsNow()
-    await git.pull('origin', defaultBranch, ['--ff-only'])
-    agent.branchName = defaultBranch
-    agent.currentBranch = defaultBranch
+    let branch = defaultBranch
+    try {
+      await git.checkout(defaultBranch)
+      agent.activity = `git pull…`
+      broadcastAgentsNow()
+      await git.pull('origin', defaultBranch, ['--ff-only'])
+    } catch (e: any) {
+      if (!/already used by worktree|already checked out/i.test(e?.message ?? '')) throw e
+      // Another worktree holds the default branch — branch off it instead.
+      const base = branches.all.includes(`remotes/origin/${defaultBranch}`)
+        ? `origin/${defaultBranch}`
+        : defaultBranch
+      branch = `${defaultBranch}-${Math.random().toString(36).slice(2, 8)}`
+      agent.activity = `git checkout -b ${branch}…`
+      broadcastAgentsNow()
+      await git.checkout(['-b', branch, base])
+      console.log(`[reset] ${defaultBranch} is checked out elsewhere — created ${branch} from ${base}`)
+    }
+    agent.branchName = branch
+    agent.currentBranch = branch
   } catch (e: any) {
     console.error(`[reset] git error for ${agent.name}:`, e?.message)
   }
