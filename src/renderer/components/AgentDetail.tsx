@@ -7,6 +7,7 @@ import Terminal from './Terminal'
 import ShellTerminal from './ShellTerminal'
 import GitLog from './GitLog'
 import AgentStatsPanel from './stats/AgentStatsPanel'
+import { useStatusAnimation } from '../anim'
 
 interface Props { agent: Agent; isSelected?: boolean }
 
@@ -181,6 +182,8 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
   }
 
   const isWorking = agent.status === 'thinking' || agent.status === 'working'
+  // Header spinner reads the shared 10 Hz `--spin-deg` var (see anim.ts).
+  useStatusAnimation(isWorking || agent.status === 'starting')
   const stateBorderColor = isWorking ? '#eab308' : borderFlash ? '#22c55e' : 'transparent'
   const borderTransition = borderFlash || isWorking ? 'border-color 0s' : 'border-color 3s ease-out'
 
@@ -202,7 +205,7 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
             {/* Status indicator */}
             {(agent.status === 'thinking' || agent.status === 'working' || agent.status === 'starting') ? (
-              <svg width="17" height="17" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, animation: 'statusSpin 0.7s linear infinite' }}>
+              <svg width="17" height="17" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, transform: 'rotate(var(--spin-deg, 0deg))' }}>
                 <circle cx="8" cy="8" r="4.5" stroke={sv.dot} strokeOpacity={0.5} strokeWidth={6} />
                 <path d="M8 3.5a4.5 4.5 0 0 1 4.5 4.5" stroke={sv.dot} strokeWidth={6} strokeLinecap="round" />
               </svg>

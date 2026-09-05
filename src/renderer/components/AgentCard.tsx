@@ -4,6 +4,7 @@ import { Agent, AgentStatus } from '../../shared/types'
 import { useAgentsStore } from '../store/agents'
 import ContextMenu from './ContextMenu'
 import { squashHome } from '../utils'
+import { useStatusAnimation } from '../anim'
 
 interface Props {
   agent: Agent
@@ -65,6 +66,9 @@ export default function AgentCard({ agent, selected, dimOpacity, onSelect, onClo
   const isFinished = agent.status === 'idle' && agent.unseenResponse && !selected
   const isActive = agent.status === 'thinking' || agent.status === 'working'
   const showStatusLabel = agent.status !== 'idle'
+
+  // Spinner + "done" pulse read shared CSS vars driven at 10 Hz (see anim.ts).
+  useStatusAnimation(sv.spin || isFinished)
 
   // CSS-animated green flash when selected agent finishes (replaces 50ms JS timer)
   const [showDoneOverlay, setShowDoneOverlay] = useState(false)
@@ -174,7 +178,7 @@ export default function AgentCard({ agent, selected, dimOpacity, onSelect, onClo
             <span title="Waiting for input" style={{
               fontSize: 11, fontWeight: 700, color: '#fff', background: '#22c55e',
               borderRadius: 10, padding: '1px 7px', flexShrink: 0,
-              animation: 'pulse 1.8s ease-in-out infinite',
+              opacity: 'var(--pulse-op, 1)',
             }}>
               done{agent.lastTaskDuration != null ? ` ${formatDuration(agent.lastTaskDuration)}` : ''}
             </span>
@@ -191,7 +195,7 @@ export default function AgentCard({ agent, selected, dimOpacity, onSelect, onClo
 
           {/* Status dot / spinner */}
           {sv.spin ? (
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, animation: 'statusSpin 0.7s linear infinite' }}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, transform: 'rotate(var(--spin-deg, 0deg))' }}>
               <circle cx="8" cy="8" r="4.5" stroke={sv.dot} strokeOpacity={0.5} strokeWidth={6} />
               <path d="M8 3.5a4.5 4.5 0 0 1 4.5 4.5" stroke={sv.dot} strokeWidth={6} strokeLinecap="round" />
             </svg>
