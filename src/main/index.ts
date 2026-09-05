@@ -16,6 +16,7 @@ import * as agentManager from './agentManager.js'
 import * as shellManager from './shellManager.js'
 import * as terminalLog from './terminalLog.js'
 import { aggregate, clearStatsCache } from './stats/aggregate.js'
+import { readCodexUsage } from './codexUsage.js'
 import { Period } from './stats/types.js'
 import { getSettings, saveSettings } from './settings.js'
 import * as fs from 'fs'
@@ -75,6 +76,43 @@ function broadcastAgents(): void {
 function broadcastAgentsNow(): void {
   if (broadcastTimer) { clearTimeout(broadcastTimer); broadcastTimer = null }
   send('agent:list', agents)
+}
+
+// Codex has no statusline pipe, so its context/cost come from the rollout JSONL
+// it appends to while running (see codexUsage.ts). Poll while any codex agent is up.
+const CODEX_USAGE_POLL_MS = 5000
+let codexUsageTimer: ReturnType<typeof setInterval> | null = null
+
+function refreshCodexUsage(): void {
+  const live = agents.filter(a => a.cli === 'codex' && a.status !== 'stopped')
+  if (live.length === 0) return
+
+  const usageByCwd = readCodexUsage(live.map(a => a.worktreePath))
+  let changed = false
+  for (const agent of live) {
+    const usage = usageByCwd.get(agent.worktreePath)
+    if (!usage) continue
+    if (
+      agent.model !== usage.model ||
+      agent.contextPercent !== usage.contextPercent ||
+      agent.tokensUsed !== usage.tokensUsed ||
+      agent.contextWindowSize !== usage.contextWindowSize ||
+      agent.costUSD !== usage.costUSD
+    ) {
+      agent.model = usage.model
+      agent.contextPercent = usage.contextPercent
+      agent.tokensUsed = usage.tokensUsed
+      agent.contextWindowSize = usage.contextWindowSize
+      agent.costUSD = usage.costUSD
+      changed = true
+    }
+  }
+  if (changed) broadcastAgents()
+}
+
+function startCodexUsagePolling(): void {
+  if (codexUsageTimer) return
+  codexUsageTimer = setInterval(refreshCodexUsage, CODEX_USAGE_POLL_MS)
 }
 
 function clearAgentMetrics(agent: Agent): void {
@@ -1119,6 +1157,7 @@ app.whenReady().then(async () => {
   terminalLog.initSearchWorker()
 
   createWindow()
+  startCodexUsagePolling()
 })
 
 ipcMain.handle('shell:openExternal', (_e, url: string) => shell.openExternal(url))

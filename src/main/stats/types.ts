@@ -65,6 +65,7 @@ export interface StatsResult {
   projects: StatsBreakdownItem[]
   models: StatsBreakdownItem[]
   activities: StatsBreakdownItem[]
+  clis: StatsBreakdownItem[]        // spend per coding CLI (Claude Code / Codex)
   tools: StatsBreakdownItem[]
 }
 

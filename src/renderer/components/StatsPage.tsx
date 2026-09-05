@@ -145,9 +145,10 @@ export default function StatsPage(): JSX.Element {
                 padding: 80, color: 'var(--text-dim)',
               }}>
                 <span style={{ fontSize: 36 }}>📊</span>
-                <span style={{ fontSize: 15 }}>No Claude Code sessions found for this period.</span>
+                <span style={{ fontSize: 15 }}>No Claude Code or Codex sessions found for this period.</span>
                 <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>
                   Sessions are read from $CLAUDE_CONFIG_DIR/projects/ (default: ~/.claude/projects/)
+                  and $CODEX_HOME/sessions/ (default: ~/.codex/sessions/)
                 </span>
               </div>
             ) : (
@@ -155,6 +156,7 @@ export default function StatsPage(): JSX.Element {
                 <SummaryCards summary={data.summary} />
                 <DailyChart daily={data.daily} period={period} />
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+                  <BreakdownPanel title="By CLI" items={data.clis} />
                   <BreakdownPanel title="By Project" items={data.projects} />
                   <BreakdownPanel title="By Model" items={data.models} />
                   <BreakdownPanel

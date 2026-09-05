@@ -1,10 +1,13 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { Period, StatsResult, StatsBreakdownItem, DailyStats } from './types.js'
+import { Period, StatsResult, StatsBreakdownItem, DailyStats, ParsedTurn } from './types.js'
 import { discoverProjectDirs, findSessionFiles, parseSessionFile, findMatchingDirs } from './parser.js'
+import { findCodexSessionFiles, parseCodexSessionFile, isUnder } from './codexParser.js'
 import { classifyTurn } from './classifier.js'
 import { loadPricing, shortModelName } from './pricing.js'
+
+const CLI_LABELS = { claude: 'Claude Code', codex: 'Codex' } as const
 
 function debugLog(msg: string): void {
   try {
@@ -50,6 +53,17 @@ function getDateRange(period: Period): { start: Date; end: Date } | null {
   }
 
   return { start, end }
+}
+
+// Day buckets are local-time: the chart's axis is built from local dates, so
+// keying the data by the UTC date would shift every bar (and drop today's).
+function localDayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function shortProjectName(p: string): string {
+  const parts = p.split('/').filter(Boolean)
+  return parts.length > 2 ? parts.slice(-2).join('/') : parts.join('/')
 }
 
 function toBreakdownList(map: Map<string, { value: number; count: number }>): StatsBreakdownItem[] {
@@ -98,6 +112,61 @@ export async function aggregate(period: Period, projectPath?: string): Promise<S
   const modelMap = new Map<string, { value: number; count: number }>()
   const activityMap = new Map<string, { value: number; count: number }>()
   const toolMap = new Map<string, { value: number; count: number }>()
+  const cliMap = new Map<string, { value: number; count: number }>()
+
+  // Shared by the Claude and codex passes: folds one turn into every breakdown
+  // except the per-project one (callers roll that up per session file).
+  const addTurn = (turn: ParsedTurn, cliLabel: string): { cost: number; calls: number } => {
+    // Filter turns by timestamp within range (skip for 'all')
+    if (start && end) {
+      const ts = turn.timestamp ? new Date(turn.timestamp) : null
+      if (ts && (ts < start || ts > end)) return { cost: 0, calls: 0 }
+    }
+
+    const classified = classifyTurn(turn)
+    const turnCost = turn.assistantCalls.reduce((s, c) => s + c.costUSD, 0)
+    const turnCalls = turn.assistantCalls.length
+
+    sessionIds.add(turn.sessionId)
+    totalCost += turnCost
+    apiCalls += turnCalls
+
+    const act = activityMap.get(classified.category) ?? { value: 0, count: 0 }
+    activityMap.set(classified.category, { value: act.value + turnCost, count: act.count + 1 })
+
+    const cli = cliMap.get(cliLabel) ?? { value: 0, count: 0 }
+    cliMap.set(cliLabel, { value: cli.value + turnCost, count: cli.count + turnCalls })
+
+    for (const call of turn.assistantCalls) {
+      totalInput += call.usage.inputTokens
+      totalOutput += call.usage.outputTokens
+      totalCacheRead += call.usage.cacheReadInputTokens
+      totalCacheWrite += call.usage.cacheCreationInputTokens
+
+      // Model breakdown
+      const modelName = shortModelName(call.model)
+      const m = modelMap.get(modelName) ?? { value: 0, count: 0 }
+      modelMap.set(modelName, { value: m.value + call.costUSD, count: m.count + 1 })
+
+      // Tool breakdown
+      for (const tool of call.tools) {
+        if (tool.startsWith('mcp__')) continue
+        const t = toolMap.get(tool) ?? { value: 0, count: 0 }
+        toolMap.set(tool, { value: t.value, count: t.count + 1 })
+      }
+
+      // Daily breakdown
+      const ts = call.timestamp || turn.timestamp
+      const at = ts ? new Date(ts) : null
+      if (at && !isNaN(at.getTime())) {
+        const day = localDayKey(at)
+        const d = dailyMap.get(day) ?? { cost: 0, calls: 0 }
+        dailyMap.set(day, { cost: d.cost + call.costUSD, calls: d.calls + 1 })
+      }
+    }
+
+    return { cost: turnCost, calls: turnCalls }
+  }
 
   debugLog(`scanning ${projectDirs.length} project dirs`)
   let _dbgFiles = 0
@@ -114,57 +183,37 @@ export async function aggregate(period: Period, projectPath?: string): Promise<S
       if (turns.length === 0) continue
 
       for (const turn of turns) {
-        // Filter turns by timestamp within range (skip for 'all')
-        if (start && end) {
-          const ts = turn.timestamp ? new Date(turn.timestamp) : null
-          if (ts && (ts < start || ts > end)) continue
-        }
-
-        const classified = classifyTurn(turn)
-        const turnCost = turn.assistantCalls.reduce((s, c) => s + c.costUSD, 0)
-        const turnCalls = turn.assistantCalls.length
-
-        sessionIds.add(turn.sessionId)
-        totalCost += turnCost
-        apiCalls += turnCalls
-        projectCost += turnCost
-        projectCalls += turnCalls
-
-        // Activity breakdown
-        const prev = activityMap.get(classified.category) ?? { value: 0, count: 0 }
-        activityMap.set(classified.category, { value: prev.value + turnCost, count: prev.count + 1 })
-
-        for (const call of turn.assistantCalls) {
-          totalInput += call.usage.inputTokens
-          totalOutput += call.usage.outputTokens
-          totalCacheRead += call.usage.cacheReadInputTokens
-          totalCacheWrite += call.usage.cacheCreationInputTokens
-
-          // Model breakdown
-          const modelName = shortModelName(call.model)
-          const m = modelMap.get(modelName) ?? { value: 0, count: 0 }
-          modelMap.set(modelName, { value: m.value + call.costUSD, count: m.count + 1 })
-
-          // Tool breakdown
-          for (const tool of call.tools) {
-            if (tool.startsWith('mcp__')) continue
-            const t = toolMap.get(tool) ?? { value: 0, count: 0 }
-            toolMap.set(tool, { value: t.value, count: t.count + 1 })
-          }
-
-          // Daily breakdown
-          const day = (call.timestamp || turn.timestamp || '').slice(0, 10)
-          if (day) {
-            const d = dailyMap.get(day) ?? { cost: 0, calls: 0 }
-            dailyMap.set(day, { cost: d.cost + call.costUSD, calls: d.calls + 1 })
-          }
-        }
+        const { cost, calls } = addTurn(turn, CLI_LABELS.claude)
+        projectCost += cost
+        projectCalls += calls
       }
     }
 
     if (projectCost > 0 || projectCalls > 0) {
-      const parts = decodedPath.split('/').filter(Boolean)
-      const shortName = parts.length > 2 ? parts.slice(-2).join('/') : parts.join('/')
+      const shortName = shortProjectName(decodedPath)
+      const p = projectMap.get(shortName) ?? { value: 0, count: 0 }
+      projectMap.set(shortName, { value: p.value + projectCost, count: p.count + projectCalls })
+    }
+  }
+
+  // --- Codex: one rollout JSONL per thread, project comes from the session cwd ---
+  const codexFiles = findCodexSessionFiles(start, end)
+  debugLog(`scanning ${codexFiles.length} codex rollout files`)
+  for (const file of codexFiles) {
+    const session = parseCodexSessionFile(file)
+    if (!session || session.turns.length === 0) continue
+    if (projectPath && !isUnder(session.cwd, projectPath)) continue
+
+    let projectCost = 0
+    let projectCalls = 0
+    for (const turn of session.turns) {
+      const { cost, calls } = addTurn(turn, CLI_LABELS.codex)
+      projectCost += cost
+      projectCalls += calls
+    }
+
+    if (projectCost > 0 || projectCalls > 0) {
+      const shortName = shortProjectName(session.cwd)
       const p = projectMap.get(shortName) ?? { value: 0, count: 0 }
       projectMap.set(shortName, { value: p.value + projectCost, count: p.count + projectCalls })
     }
@@ -194,6 +243,7 @@ export async function aggregate(period: Period, projectPath?: string): Promise<S
     projects: toBreakdownList(projectMap),
     models: toBreakdownList(modelMap),
     activities: toBreakdownList(activityMap),
+    clis: toBreakdownList(cliMap),
     tools: toBreakdownList(toolMap).map(t => ({ ...t, value: t.count })),
   }
 
@@ -212,7 +262,7 @@ function buildDailyArray(map: Map<string, { cost: number; calls: number }>, star
   const result: DailyStats[] = []
   const current = new Date(start)
   while (current <= end) {
-    const key = current.toISOString().slice(0, 10)
+    const key = localDayKey(current)
     const d = map.get(key)
     result.push({ date: key, cost: d?.cost ?? 0, calls: d?.calls ?? 0 })
     current.setDate(current.getDate() + 1)

@@ -339,7 +339,7 @@ export default function AgentDetail({ agent, isSelected = true }: Props): JSX.El
                 background: 'var(--surface2)', borderRadius: 4, padding: '2px 6px',
                 border: '1px solid var(--border)', fontWeight: 500,
               }}>
-                {agent.cli}
+                {agent.cli}{agent.cli === 'codex' && agent.model ? ` · ${agent.model}` : ''}
               </span>
             ) : (
               <select

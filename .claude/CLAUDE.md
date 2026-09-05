@@ -23,12 +23,14 @@ src/
     settings.ts       — electron-store persistence (settings)
     setup.ts          — statusline.sh installer + paths/configDir
     statusPipe.ts     — named-pipe reader for Claude statusline JSON
+    codexUsage.ts     — live codex context/cost/model tailed from the rollout JSONL
     terminalLog.ts    — per-session log files + search worker bridge
     searchWorker.ts   — Worker thread: trigram index, mtime-lazy refresh
     stats/
       aggregate.ts    — token/cost rollups across sessions
       classifier.ts   — message-type classification
       parser.ts       — Claude session JSONL parser
+      codexParser.ts  — codex rollout JSONL parser (~/.codex/sessions)
       pricing.ts      — model pricing tables
       types.ts        — stats data types
   preload/
@@ -74,9 +76,12 @@ npm run dist:linux | dist:mac | dist:win    # electron-builder package
 ## Key behaviors
 - Agents persist across restarts (state in `~/.config/multiagent/state.json`)
 - Per-agent model: `launchModel` (persisted) is passed as `claude --model <id>`; changing it on a running agent sends `/model <id>` to the session. Model list lives in `CLAUDE_MODELS` (src/shared/types.ts)
-- Per-agent CLI: `cli` (persisted, `'claude' | 'codex' | 'opencode'`) picks the spawned binary; Codex uses `resume --last` / `--dangerously-bypass-approvals-and-sandbox` and ignores `launchModel`; opencode uses `--continue`, reuses `launchModel` as a free-text `provider/model` string for `--model`, gets `opencodeConfig` (persisted path) as `OPENCODE_CONFIG` env, and has no permission-bypass flag (permissions live in its config). Global default is the `defaultCli` setting; switching a running agent (card context menu) restarts its session and clears `launchModel` when opencode is involved (formats differ). Only Claude has a statusline pipe, so codex/opencode context/cost stay empty; opencode model/config edits apply on restart
+- Per-agent CLI: `cli` (persisted, `'claude' | 'codex' | 'opencode'`) picks the spawned binary; Codex uses `resume --last` / `--dangerously-bypass-approvals-and-sandbox` and ignores `launchModel`; opencode uses `--continue`, reuses `launchModel` as a free-text `provider/model` string for `--model`, gets `opencodeConfig` (persisted path) as `OPENCODE_CONFIG` env, and has no permission-bypass flag (permissions live in its config). Global default is the `defaultCli` setting; switching a running agent (card context menu) restarts its session and clears `launchModel` when opencode is involved (formats differ). opencode has no usage source, so its context/cost stay empty; codex fills the same fields from its rollout JSONL (see below); opencode model/config edits apply on restart
 - On restart, agents show as stopped; click Restart → `claude --continue`
 - Context/token/cost bar reads Claude's statusline JSON via named pipe
+- Codex has no statusline hook, so `codexUsage.ts` polls (5s, main process) the newest `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` whose `session_meta.cwd` is under the agent's worktree and reads its tail: cumulative `token_count` → cost, `last_token_usage` / `model_context_window` → context %, last `turn_context` → model. Subagent threads are separate rollout files and their spend is summed into the session's cost
+- Codex spend also feeds the stats page: `stats/codexParser.ts` takes per-response usage from `token_usage_record`, or from cumulative `event_msg/token_count` deltas on older rollouts (both give identical totals). `input_tokens` already includes `cached_input_tokens`, so they are split before pricing, and OpenAI cache writes are priced as plain input. Project attribution is the session `cwd`, so per-agent stats match a worktree. The stats page has a By CLI panel (Claude Code vs Codex)
+- Daily spend buckets are keyed by local date (the chart axis is local, so UTC keys would shift every bar and drop today's)
 - Diff/file/line counts compare against the PR base; `getMergeBase` runs a throttled (5min TTL) `git fetch` per worktree so a stale local `origin/main` doesn't inflate counts
 - Reset (checkout default + pull) and Restart (chat reset) both clear transient metrics — counts repopulate on the next 10s poll
 - Terminal log writes are coalesced into one `fs.write` per 250ms window using a chunk array (avoids O(n²) string concat)

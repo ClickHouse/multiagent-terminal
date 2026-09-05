@@ -8,11 +8,13 @@ const DEBUG_KEYWORDS = /\b(fix|bug|error|broken|failing|crash|issue|debug|traceb
 const FEATURE_KEYWORDS = /\b(add|create|implement|new|build|feature|introduce|set\s*up|scaffold|generate)\b/i
 const REFACTOR_KEYWORDS = /\b(refactor|clean\s*up|rename|reorganize|simplify|extract|restructure|move|migrate|split)\b/i
 
-const EDIT_TOOLS = new Set(['Edit', 'Write', 'FileEditTool', 'FileWriteTool', 'NotebookEdit'])
-const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'FileReadTool', 'GrepTool', 'GlobTool'])
-const BASH_TOOLS = new Set(['Bash', 'BashTool', 'PowerShellTool'])
-const TASK_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList', 'TaskOutput', 'TaskStop', 'TodoWrite'])
-const SEARCH_TOOLS = new Set(['WebSearch', 'WebFetch', 'ToolSearch'])
+// Sets carry both Claude Code tool names and codex CLI ones (exec, apply_patch, ...)
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'FileEditTool', 'FileWriteTool', 'NotebookEdit', 'apply_patch'])
+const READ_TOOLS = new Set(['Read', 'Grep', 'Glob', 'FileReadTool', 'GrepTool', 'GlobTool', 'read_file', 'view_image'])
+const BASH_TOOLS = new Set(['Bash', 'BashTool', 'PowerShellTool', 'exec', 'exec_command', 'shell', 'unified_exec', 'local_shell'])
+const TASK_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TaskGet', 'TaskList', 'TaskOutput', 'TaskStop', 'TodoWrite', 'update_plan'])
+const SEARCH_TOOLS = new Set(['WebSearch', 'WebFetch', 'ToolSearch', 'web_search'])
+const AGENT_TOOLS = new Set(['Agent', 'spawn_agent', 'wait_agent', 'list_agents', 'followup_task'])
 
 function getAllTools(turn: ParsedTurn): string[] {
   const tools: string[] = []
@@ -44,7 +46,7 @@ export function classifyTurn(turn: ParsedTurn): ClassifiedTurn {
     const hasBash = tools.some(t => BASH_TOOLS.has(t))
     const hasTasks = tools.some(t => TASK_TOOLS.has(t))
     const hasSearch = tools.some(t => SEARCH_TOOLS.has(t))
-    const hasAgent = toolSet.has('Agent')
+    const hasAgent = tools.some(t => AGENT_TOOLS.has(t))
     const hasPlan = toolSet.has('EnterPlanMode')
 
     if (hasPlan) {
